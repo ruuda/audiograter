@@ -5,13 +5,12 @@
 // it under the terms of the GNU General Public License version 3. A copy
 // of the License is available in the root of the repository.
 
-use std::env;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 
 #[macro_use] extern crate relm;
 #[macro_use] extern crate relm_derive;
 
-use gio::prelude::*;
 use gtk::prelude::*;
 
 use relm::{Relm, Update, Widget};
@@ -22,7 +21,9 @@ struct Model {
 
 #[derive(Msg)]
 enum Msg {
+    DropBad,
     DropFile(PathBuf),
+    Quit,
 }
 
 #[derive(Clone)]
@@ -49,10 +50,16 @@ impl Update for Win {
 
     fn update(&mut self, event: Msg) {
         match event {
+            Msg::DropBad => eprintln!("The drop data did not contain a valid file name."),
             Msg::DropFile(fname) => {
-                println!("{:?}", fname);
+                if let Some(name) = fname.file_name().and_then(OsStr::to_str) {
+                    // For some reason, when we get a file name, it has a
+                    // newline at the end. Trim it when setting the title.
+                    self.widgets.window.set_title(&format!("{} - Spekje", name.trim_end()));
+                }
                 self.model.file_name = Some(fname);
             }
+            Msg::Quit => {}
         }
     }
 }
@@ -103,35 +110,20 @@ impl Widget for Win {
             gdk::DragAction::COPY,
         );
 
-        connect!(
-            relm,
-            window,
-            connect_drag_data_received(
-                _self,
-                _drag_ctx,
-                _x,
-                _y,
-                data,
-                _info,
-                _time
-            ),
-            if let Some(uri) = data.get_text() {
-                if let Ok((fname, _)) = glib::filename_from_uri(uri.as_str()) {
-                    Msg::DropFile(fname)
-                } else {
-                    Msg::DropFile("".into())
+        connect!(relm, window,
+            connect_drag_data_received(_self, _drag_ctx, _x, _y, data, _info, _time),
+            match data.get_text() {
+                None => Msg::DropBad,
+                Some(uri) => match glib::filename_from_uri(uri.as_str()) {
+                    Ok((fname, _)) => Msg::DropFile(fname),
+                    Err(_) => Msg::DropBad,
                 }
-            } else {
-                Msg::DropFile("".into())
             }
         );
-
-
-        window.connect_drag_data_received(move |_self, _drag_context, _x, _y, data, info, _time| {
-            // We registered only this target, so we should only be signalled for
-            // this target.
-            assert_eq!(info, drag_event_info);
-        });
+        connect!(relm, window,
+            connect_delete_event(_, _),
+            return (Msg::Quit, Inhibit(false))
+        );
 
         window.show_all();
 
