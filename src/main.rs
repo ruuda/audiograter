@@ -7,18 +7,16 @@
 
 use std::env;
 
-use gdk_pixbuf as gdk;
 use gio::prelude::*;
-use glib;
 use gtk::prelude::*;
 
-fn build_canvas() -> Option<gdk::Pixbuf> {
+fn build_canvas() -> Option<gdk_pixbuf::Pixbuf> {
     let has_alpha = false;
     let bits_per_sample = 8;
     let width = 1280;
     let height = 720;
-    gdk::Pixbuf::new(
-        gdk::Colorspace::Rgb,
+    gdk_pixbuf::Pixbuf::new(
+        gdk_pixbuf::Colorspace::Rgb,
         has_alpha,
         bits_per_sample,
         width,
@@ -43,10 +41,38 @@ fn build_ui(application: &gtk::Application) {
     let canvas = build_canvas();
     let image = gtk::Image::new_from_pixbuf(canvas.as_ref());
 
-    let expand = false;
-    let fill = false;
+    let expand = true;
+    let fill = true;
     let padding = 0;
     vbox.pack_start(&image, expand, fill, padding);
+
+    // Accept single strings for dropping. We could accept "text/uri-list" too,
+    // but the application cannot handle more than one file at a time anyway.
+    let drag_event_info = 0;
+    let drag_targets = [
+        gtk::TargetEntry::new(
+            "text/plain",
+            gtk::TargetFlags::OTHER_APP,
+            drag_event_info,
+        ),
+    ];
+
+    window.drag_dest_set(
+        gtk::DestDefaults::ALL,
+        &drag_targets[..],
+        gdk::DragAction::COPY,
+    );
+
+    window.connect_drag_data_received(move |_self, _drag_context, _x, _y, data, info, _time| {
+        // We registered only this target, so we should only be signalled for
+        // this target.
+        assert_eq!(info, drag_event_info);
+        if let Some(uri) = data.get_text() {
+            if let Ok(fname) = glib::filename_from_uri(uri.as_str()) {
+                println!("{:?}", fname);
+            }
+        }
+    });
 
     window.show_all();
 }
