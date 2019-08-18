@@ -1,0 +1,11 @@
+[package]
+name = "spekje"
+version = "0.0.0"
+authors = ["Ruud van Asseldonk <dev@veniogames.com>"]
+edition = "2018"
+
+[dependencies]
+gdk-pixbuf = "0.7.0"
+gio        = "0.7.0"
+gtk        = "0.7.0"
+glib       = "0.8.1"
