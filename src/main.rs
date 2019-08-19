@@ -41,11 +41,13 @@ enum ViewEvent {
 
 struct Model {
     file_name: Option<PathBuf>,
+    target_size: (i32, i32),
     sender: glib::SyncSender<ViewEvent>,
 }
 
 enum ModelEvent {
     OpenFile(PathBuf),
+    Resize(i32, i32),
 }
 
 impl View {
@@ -105,6 +107,11 @@ impl View {
             glib::signal::Inhibit(true)
         });
 
+        let view_clone = view.clone();
+        view.image.connect_size_allocate(move |_self, rect| {
+            view_clone.on_size_allocate(rect);
+        });
+
         view.window.show_all();
 
         view
@@ -117,10 +124,13 @@ impl View {
             // When dropped, the uri is terminated by a newline. Strip it.
             let uri_stripped = uri.as_str().trim_end();
             if let Ok((fname, _)) = glib::filename_from_uri(uri_stripped) {
-                println!("{:?}", fname);
                 self.sender.send(ModelEvent::OpenFile(fname)).unwrap();
             }
         }
+    }
+
+    fn on_size_allocate(&self, rect: &gtk::Rectangle) {
+        self.sender.send(ModelEvent::Resize(rect.width, rect.height)).unwrap();
     }
 
     fn on_draw(&self, ctx: &cairo::Context) {
@@ -145,6 +155,7 @@ impl Model {
     fn new(sender: glib::SyncSender<ViewEvent>) -> Model {
         Model {
             file_name: None,
+            target_size: (0, 0),
             sender: sender,
         }
     }
@@ -162,6 +173,10 @@ impl Model {
                 }
                 self.file_name = Some(fname);
                 // TODO: Start actual file load.
+            }
+            ModelEvent::Resize(width, height) => {
+                println!("Resized to {} x {}", width, height);
+                self.target_size = (width, height);
             }
         }
     }
