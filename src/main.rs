@@ -16,20 +16,7 @@ use std::rc::Rc;
 
 use gio::prelude::*;
 use gtk::prelude::*;
-
-fn build_canvas() -> Option<gdk_pixbuf::Pixbuf> {
-    let has_alpha = false;
-    let bits_per_sample = 8;
-    let width = 640;
-    let height = 480;
-    gdk_pixbuf::Pixbuf::new(
-        gdk_pixbuf::Colorspace::Rgb,
-        has_alpha,
-        bits_per_sample,
-        width,
-        height,
-    )
-}
+use gdk::prelude::*;
 
 /// Thread-safe bitmap that we can fill on one thread and display on another.
 struct Bitmap {
@@ -181,12 +168,10 @@ impl View {
     }
 
     fn on_draw(&self, ctx: &cairo::Context) {
-        // TODO: render pixbuf.
-        ctx.set_source_rgb(0.0, 0.0, 0.0);
-        ctx.set_line_width(1.0);
-        ctx.move_to(10.0, 10.0);
-        ctx.line_to(100.0, 100.0);
-        ctx.stroke();
+        if let Some(pixbuf) = self.pixbuf.as_ref() {
+            ctx.set_source_pixbuf(pixbuf, 0.0, 0.0);
+            ctx.paint();
+        }
     }
 
     /// Handle one event. Should only be called on the main thread.
@@ -197,6 +182,7 @@ impl View {
             }
             ViewEvent::SetView(bitmap) => {
                 self.pixbuf = Some(bitmap.into_pixbuf());
+                self.image.queue_draw();
             }
         }
     }
