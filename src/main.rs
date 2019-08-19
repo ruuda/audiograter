@@ -130,7 +130,8 @@ impl View {
     }
 
     fn on_size_allocate(&self, rect: &gtk::Rectangle) {
-        self.sender.send(ModelEvent::Resize(rect.width, rect.height)).unwrap();
+        let f = self.image.get_scale_factor();
+        self.sender.send(ModelEvent::Resize(rect.width * f, rect.height * f)).unwrap();
     }
 
     fn on_draw(&self, ctx: &cairo::Context) {
