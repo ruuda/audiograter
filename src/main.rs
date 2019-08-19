@@ -6,10 +6,13 @@
 // of the License is available in the root of the repository.
 
 use std::env;
+use std::iter;
 use std::path::{PathBuf};
 use std::ffi::OsStr;
 use std::sync::mpsc;
 use std::thread;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use gio::prelude::*;
 use gtk::prelude::*;
@@ -28,15 +31,54 @@ fn build_canvas() -> Option<gdk_pixbuf::Pixbuf> {
     )
 }
 
-#[derive(Clone)]
+/// Thread-safe bitmap that we can fill on one thread and display on another.
+struct Bitmap {
+    data: Vec<u8>,
+    width: i32,
+    height: i32,
+}
+
+impl Bitmap {
+    pub fn new(width: i32, height: i32) -> Bitmap {
+        let len = width * height * 3;
+        Bitmap {
+            data: iter::repeat(0).take(len as usize).collect(),
+            width: width,
+            height: height,
+        }
+    }
+
+    pub fn into_pixbuf(self) -> gdk_pixbuf::Pixbuf {
+        let has_alpha = false;
+        let bits_per_sample = 8;
+        let row_stride = 3 * self.width;
+        gdk_pixbuf::Pixbuf::new_from_mut_slice(
+            self.data,
+            gdk_pixbuf::Colorspace::Rgb,
+            has_alpha,
+            bits_per_sample,
+            self.width,
+            self.height,
+            row_stride,
+        )
+    }
+}
+
+/// Container for the application widgets.
+///
+/// Although GTK widgets are already refcounted, the view itself is also kept in
+/// a refcounted cell. This allows events to mutate the view state, e.g. in
+/// order to swap out the pixbuf.
 struct View {
     window: gtk::ApplicationWindow,
     image: gtk::DrawingArea,
+    pixbuf: Option<gdk_pixbuf::Pixbuf>,
     sender: mpsc::SyncSender<ModelEvent>,
 }
 
 enum ViewEvent {
     SetTitle(String),
+    SetView(Bitmap),
 }
 
 struct Model {
@@ -54,7 +96,7 @@ impl View {
     fn new(
         application: &gtk::Application,
         sender: mpsc::SyncSender<ModelEvent>,
-    ) -> View {
+    ) -> Rc<RefCell<View>> {
         let window = gtk::ApplicationWindow::new(application);
 
         window.set_title("Spekje");
@@ -89,32 +131,36 @@ impl View {
             gdk::DragAction::COPY,
         );
 
-        let view = View {
-            window,
-            image,
-            sender,
-        };
 
-        let view_clone = view.clone();
-        view.window.connect_drag_data_received(move |_self, _drag_context, _x, _y, data, info, _time| {
+        let view_cell = Rc::new(RefCell::new(
+            View {
+                window: window.clone(),
+                image: image.clone(),
+                pixbuf: None,
+                sender: sender,
+            }
+        ));
+
+        let view_cell_clone = view_cell.clone();
+        window.connect_drag_data_received(move |_self, _drag_context, _x, _y, data, info, _time| {
             assert_eq!(info, DRAG_EVENT_INFO);
-            view_clone.on_drag_data_received(data);
+            view_cell_clone.borrow_mut().on_drag_data_received(data);
         });
 
-        let view_clone = view.clone();
-        view.image.connect_draw(move |_self, ctx| {
-            view_clone.on_draw(ctx);
+        let view_cell_clone = view_cell.clone();
+        image.connect_draw(move |_self, ctx| {
+            view_cell_clone.borrow_mut().on_draw(ctx);
             glib::signal::Inhibit(true)
         });
 
-        let view_clone = view.clone();
-        view.image.connect_size_allocate(move |_self, rect| {
-            view_clone.on_size_allocate(rect);
+        let view_cell_clone = view_cell.clone();
+        image.connect_size_allocate(move |_self, rect| {
+            view_cell_clone.borrow_mut().on_size_allocate(rect);
         });
 
-        view.window.show_all();
+        window.show_all();
 
-        view
+        view_cell
     }
 
     fn on_drag_data_received(&self, data: &gtk::SelectionData) {
@@ -135,6 +181,7 @@ impl View {
     }
 
     fn on_draw(&self, ctx: &cairo::Context) {
+        // TODO: render pixbuf.
         ctx.set_source_rgb(0.0, 0.0, 0.0);
         ctx.set_line_width(1.0);
         ctx.move_to(10.0, 10.0);
@@ -143,10 +190,13 @@ impl View {
     }
 
     /// Handle one event. Should only be called on the main thread.
-    fn handle_event(&self, event: ViewEvent) {
+    fn handle_event(&mut self, event: ViewEvent) {
         match event {
             ViewEvent::SetTitle(fname) => {
                 self.window.set_title(&format!("{} - Spekje", fname));
+            }
+            ViewEvent::SetView(bitmap) => {
+                self.pixbuf = Some(bitmap.into_pixbuf());
             }
         }
     }
@@ -178,6 +228,9 @@ impl Model {
             ModelEvent::Resize(width, height) => {
                 println!("Resized to {} x {}", width, height);
                 self.target_size = (width, height);
+                let bitmap = Bitmap::new(width, height);
+                // TODO: Paint bitmap.
+                self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
             }
         }
     }
@@ -209,11 +262,11 @@ fn main() {
         });
 
         // Back on the main thread, construct the view.
-        let view = View::new(app, send_model);
+        let view_cell = View::new(app, send_model);
 
         // Handle the view's events on this thread, the main thread.
         recv_view.attach(None, move |event| {
-            view.handle_event(event);
+            view_cell.borrow_mut().handle_event(event);
             glib::source::Continue(true)
         });
     });
