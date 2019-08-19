@@ -6,7 +6,8 @@
 // of the License is available in the root of the repository.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{PathBuf};
+use std::ffi::OsStr;
 use std::sync::mpsc;
 use std::thread;
 
@@ -44,7 +45,7 @@ struct Model {
 }
 
 enum ModelEvent {
-    DropFile(PathBuf),
+    OpenFile(PathBuf),
 }
 
 impl View {
@@ -93,9 +94,11 @@ impl View {
             // this target.
             assert_eq!(info, drag_event_info);
             if let Some(uri) = data.get_text() {
-                if let Ok((fname, _)) = glib::filename_from_uri(uri.as_str()) {
+                // When dropped, the uri is terminated by a newline. Strip it.
+                let uri_stripped = uri.as_str().trim_end();
+                if let Ok((fname, _)) = glib::filename_from_uri(uri_stripped) {
                     println!("{:?}", fname);
-                    sender_clone.send(ModelEvent::DropFile(fname));
+                    sender_clone.send(ModelEvent::OpenFile(fname)).unwrap();
                 }
             }
         });
@@ -107,12 +110,15 @@ impl View {
             image,
             sender,
         }
-
     }
 
     /// Handle one event. Should only be called on the main thread.
     fn handle_event(&self, event: ViewEvent) {
-        println!("view event!");
+        match event {
+            ViewEvent::SetTitle(fname) => {
+                self.window.set_title(&format!("{} - Spekje", fname));
+            }
+        }
     }
 }
 
@@ -125,7 +131,20 @@ impl Model {
     }
 
     pub fn handle_event(&mut self, event: ModelEvent) {
-        println!("model event!");
+        match event {
+            ModelEvent::OpenFile(fname) => {
+                match fname.file_name().and_then(OsStr::to_str) {
+                    // I don't care to support non-utf8 filenames.
+                    None => return eprintln!("Invalid file name to open."),
+                    Some(fname_str) => {
+                        let event = ViewEvent::SetTitle(fname_str.into());
+                        self.sender.send(event).unwrap();
+                    },
+                }
+                self.file_name = Some(fname);
+                // TODO: Start actual file load.
+            }
+        }
     }
 }
 
