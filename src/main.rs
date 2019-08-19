@@ -169,6 +169,12 @@ impl View {
 
     fn on_draw(&self, ctx: &cairo::Context) {
         if let Some(pixbuf) = self.pixbuf.as_ref() {
+            // The pixmap is blown up by the scaling factor, so it fills the
+            // widgets size in device pixels. But the Cairo context's default
+            // scale is device-independent, which is right for DPI-unaware apps.
+            // We are aware, so scale down to make the pixmap fill the widget.
+            let f = (self.image.get_scale_factor() as f64).recip();
+            ctx.scale(f, f);
             ctx.set_source_pixbuf(pixbuf, 0.0, 0.0);
             ctx.paint();
         }
@@ -214,8 +220,15 @@ impl Model {
             ModelEvent::Resize(width, height) => {
                 println!("Resized to {} x {}", width, height);
                 self.target_size = (width, height);
-                let bitmap = Bitmap::new(width, height);
-                // TODO: Paint bitmap.
+                let mut bitmap = Bitmap::new(width, height);
+                for y in 0..height {
+                    for x in 0..width {
+                        let p = (y * width + x) as usize;
+                        bitmap.data[p * 3 + 0] = (x & 255) as u8;
+                        bitmap.data[p * 3 + 1] = (y & 255) as u8;
+                    }
+                }
+                // TODO: Paint bitmap with useful content.
                 self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
             }
         }
