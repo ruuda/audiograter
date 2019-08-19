@@ -17,8 +17,8 @@ use gtk::prelude::*;
 fn build_canvas() -> Option<gdk_pixbuf::Pixbuf> {
     let has_alpha = false;
     let bits_per_sample = 8;
-    let width = 1280;
-    let height = 720;
+    let width = 640;
+    let height = 480;
     gdk_pixbuf::Pixbuf::new(
         gdk_pixbuf::Colorspace::Rgb,
         has_alpha,
@@ -31,7 +31,7 @@ fn build_canvas() -> Option<gdk_pixbuf::Pixbuf> {
 #[derive(Clone)]
 struct View {
     window: gtk::ApplicationWindow,
-    image: gtk::Image,
+    image: gtk::DrawingArea,
     sender: mpsc::SyncSender<ModelEvent>,
 }
 
@@ -58,13 +58,12 @@ impl View {
         window.set_title("Spekje");
         window.set_border_width(10);
         window.set_position(gtk::WindowPosition::Center);
-        window.set_default_size(1280, 720);
+        window.set_default_size(640, 480);
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
         window.add(&vbox);
 
-        let canvas = build_canvas();
-        let image = gtk::Image::new_from_pixbuf(canvas.as_ref());
+        let image = gtk::DrawingArea::new();
 
         let expand = true;
         let fill = true;
@@ -73,12 +72,12 @@ impl View {
 
         // Accept single strings for dropping. We could accept "text/uri-list" too,
         // but the application cannot handle more than one file at a time anyway.
-        let drag_event_info = 0;
+        const DRAG_EVENT_INFO: u32 = 0;
         let drag_targets = [
             gtk::TargetEntry::new(
                 "text/plain",
                 gtk::TargetFlags::OTHER_APP,
-                drag_event_info,
+                DRAG_EVENT_INFO,
             ),
         ];
 
@@ -88,28 +87,48 @@ impl View {
             gdk::DragAction::COPY,
         );
 
-        let sender_clone = sender.clone();
-        window.connect_drag_data_received(move |_self, _drag_context, _x, _y, data, info, _time| {
-            // We registered only this target, so we should only be signalled for
-            // this target.
-            assert_eq!(info, drag_event_info);
-            if let Some(uri) = data.get_text() {
-                // When dropped, the uri is terminated by a newline. Strip it.
-                let uri_stripped = uri.as_str().trim_end();
-                if let Ok((fname, _)) = glib::filename_from_uri(uri_stripped) {
-                    println!("{:?}", fname);
-                    sender_clone.send(ModelEvent::OpenFile(fname)).unwrap();
-                }
-            }
-        });
-
-        window.show_all();
-
-        View {
+        let view = View {
             window,
             image,
             sender,
+        };
+
+        let view_clone = view.clone();
+        view.window.connect_drag_data_received(move |_self, _drag_context, _x, _y, data, info, _time| {
+            assert_eq!(info, DRAG_EVENT_INFO);
+            view_clone.on_drag_data_received(data);
+        });
+
+        let view_clone = view.clone();
+        view.image.connect_draw(move |_self, ctx| {
+            view_clone.on_draw(ctx);
+            glib::signal::Inhibit(true)
+        });
+
+        view.window.show_all();
+
+        view
+    }
+
+    fn on_drag_data_received(&self, data: &gtk::SelectionData) {
+        // We registered only this target, so we should only be signalled for
+        // this target.
+        if let Some(uri) = data.get_text() {
+            // When dropped, the uri is terminated by a newline. Strip it.
+            let uri_stripped = uri.as_str().trim_end();
+            if let Ok((fname, _)) = glib::filename_from_uri(uri_stripped) {
+                println!("{:?}", fname);
+                self.sender.send(ModelEvent::OpenFile(fname)).unwrap();
+            }
         }
+    }
+
+    fn on_draw(&self, ctx: &cairo::Context) {
+        ctx.set_source_rgb(0.0, 0.0, 0.0);
+        ctx.set_line_width(1.0);
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.stroke();
     }
 
     /// Handle one event. Should only be called on the main thread.
