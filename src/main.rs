@@ -312,6 +312,9 @@ impl Model {
                     Err(err) => return eprintln!("Failed to open file: {:?}", err),
                 };
 
+                // Clear leftovers from a previous file, if any.
+                self.spectrum.clear();
+
                 // If we have successfully loadede the file, we can tell the UI
                 // to show that in the title, and we can begin decoding.
                 self.sender.send(view_event).unwrap();
@@ -339,7 +342,7 @@ impl Model {
                 // more responsive by allowing us to handle other events. Doing
                 // limited work and then re-posting a decode event acts like a
                 // yield point.
-                for i in 0..100 {
+                for _ in 0..256 {
                     let block = match blocks.read_next_or_eof(Vec::new()) {
                         Ok(Some(b)) => b,
                         Ok(None) => { have_more = false; break }
