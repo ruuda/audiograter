@@ -18,6 +18,35 @@ use gio::prelude::*;
 use gtk::prelude::*;
 use gdk::prelude::*;
 
+/// Given t in [0, 1], return an RGB value in [0, 1]^3.
+pub fn colormap_magma(t: f32) -> (f32, f32, f32) {
+    // Based on https://www.shadertoy.com/view/WlfXRN (licensed CC0), which in
+    // turn is a fit of https://github.com/BIDS/colormap/blob/master/colormaps.py,
+    // which is also licensed CC0.
+
+    let c = [
+        [ -0.002136485053939582, -0.000749655052795221, -0.005386127855323933],
+        [  0.2516605407371642,    0.6775232436837668,    2.494026599312351],
+        [  8.353717279216625,    -3.577719514958484,     0.3144679030132573],
+        [-27.66873308576866,     14.26473078096533,    -13.64921318813922],
+        [ 52.17613981234068,    -27.94360607168351,     12.94416944238394],
+        [-50.76852536473588,     29.04658282127291,      4.23415299384598],
+        [ 18.65570506591883,    -11.48977351997711,     -5.601961508734096],
+    ];
+
+    let mut result = [0.0, 0.0, 0.0];
+
+    for j in (0..7).rev() {
+        for i in 0..3 {
+            result[i] *= t;
+            result[i] += c[j][i];
+        }
+    }
+
+    (result[0], result[1], result[2])
+}
+
+
 /// Thread-safe bitmap that we can fill on one thread and display on another.
 struct Bitmap {
     data: Vec<u8>,
@@ -32,6 +61,27 @@ impl Bitmap {
             data: iter::repeat(0).take(len as usize).collect(),
             width: width,
             height: height,
+        }
+    }
+
+    pub fn generate<F: Fn(i32, i32) -> f32>(width: i32, height: i32, f: F) -> Bitmap {
+        let len = width * height * 3;
+        let mut data = Vec::with_capacity(len as usize);
+
+        for y in 0..height {
+            for x in 0..width {
+                let t = f(x, y);
+                let (r, g, b) = colormap_magma(t);
+                data.push((r.min(1.0).max(0.0) * 255.0) as u8);
+                data.push((g.min(1.0).max(0.0) * 255.0) as u8);
+                data.push((b.min(1.0).max(0.0) * 255.0) as u8);
+            }
+        }
+
+        Bitmap {
+            data,
+            width,
+            height,
         }
     }
 
@@ -218,17 +268,13 @@ impl Model {
                 // TODO: Start actual file load.
             }
             ModelEvent::Resize(width, height) => {
-                println!("Resized to {} x {}", width, height);
                 self.target_size = (width, height);
-                let mut bitmap = Bitmap::new(width, height);
-                for y in 0..height {
-                    for x in 0..width {
-                        let p = (y * width + x) as usize;
-                        bitmap.data[p * 3 + 0] = (x & 255) as u8;
-                        bitmap.data[p * 3 + 1] = (y & 255) as u8;
-                    }
-                }
                 // TODO: Paint bitmap with useful content.
+                let bitmap = Bitmap::generate(width, height, |x, y| {
+                    let ty = y as f32 / height as f32;
+                    let tx = x as f32 / width as f32;
+                    (7.0 * tx).sin() * (tx.sin() * ty).cos() * 0.5 + 0.5
+                });
                 self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
             }
         }
