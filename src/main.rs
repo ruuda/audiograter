@@ -259,6 +259,33 @@ impl Model {
         }
     }
 
+    pub fn run_event_loop(&mut self, events: mpsc::Receiver<ModelEvent>) {
+        // Block until a new event arrives.
+        for mut current_event in events.iter() {
+            // When we do have an event, don't handle it immediately. First
+            // check if there already is another event behind it.
+            for next_event in events.try_iter() {
+                current_event = match (&current_event, &next_event) {
+                    // If there is another event waiting, and it is a resize
+                    // just like the current event, then the current event is
+                    // already obsolete and we can drop it.
+                    (&ModelEvent::Resize(..), &ModelEvent::Resize(..)) => {
+                        next_event
+                    }
+                    // In any other case, we need to handle the current event.
+                    // Handle it now, and leave the next event to be handled in
+                    // the next iteration, or after the `try_iter` loop.
+                    _ => {
+                        self.handle_event(current_event);
+                        next_event
+                    }
+                };
+            }
+
+            self.handle_event(current_event);
+        }
+    }
+
     pub fn handle_event(&mut self, event: ModelEvent) {
         match event {
             ModelEvent::OpenFile(fname) => {
@@ -304,12 +331,7 @@ fn main() {
         // On a background thread, construct the model, and run its event loop.
         thread::spawn(move || {
             let mut model = Model::new(send_view);
-            loop {
-                match recv_model.recv() {
-                    Ok(event) => model.handle_event(event),
-                    Err(_) => break,
-                };
-            }
+            model.run_event_loop(recv_model);
         });
 
         // Back on the main thread, construct the view.
