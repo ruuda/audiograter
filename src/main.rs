@@ -289,16 +289,25 @@ impl Model {
     pub fn handle_event(&mut self, event: ModelEvent) {
         match event {
             ModelEvent::OpenFile(fname) => {
-                match fname.file_name().and_then(OsStr::to_str) {
+                // Build the view event in advance, so we can refuse file names
+                // that we would not be able to render in the UI.
+                let view_event = match fname.file_name().and_then(OsStr::to_str) {
                     // I don't care to support non-utf8 filenames.
                     None => return eprintln!("Invalid file name to open."),
-                    Some(fname_str) => {
-                        let event = ViewEvent::SetTitle(fname_str.into());
-                        self.sender.send(event).unwrap();
-                    },
-                }
+                    Some(fname_str) => ViewEvent::SetTitle(fname_str.into()),
+                };
+
+                // Then try to open the file itself. If this fails, we don't
+                // load the file in the UI.
+                let reader = match claxon::FlacReader::open(&fname) {
+                    Ok(r) => r,
+                    Err(err) => return eprintln!("Failed to open file: {:?}", err),
+                };
+
+                // If we have successfully loadede the file, we can tell the UI
+                // to show that in the title.
                 self.file_name = Some(fname);
-                // TODO: Start actual file load.
+                self.sender.send(view_event).unwrap();
             }
             ModelEvent::Resize(width, height) => {
                 self.target_size = (width, height);

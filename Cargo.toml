@@ -5,9 +5,10 @@ authors = ["Ruud van Asseldonk <dev@veniogames.com>"]
 edition = "2018"
 
 [dependencies]
+cairo-rs   = "0.7.1"
+claxon     = "0.4.2"
 gdk        = "0.11.0"
 gdk-pixbuf = "0.7.0"
 gio        = "0.7.0"
 glib       = "0.8.1"
 gtk        = "0.7.0"
-cairo-rs   = "0.7.1"
