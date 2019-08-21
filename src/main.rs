@@ -378,9 +378,10 @@ impl Model {
             let i = x as usize * self.spectrum.len() / width as usize;
             let ty = (y as f32 / height as f32) - 0.5;
             let sample = self.spectrum[i];
-            let linear = (ty * consts::PI).cos() * sample;
-            let logarithmic = (ty * consts::PI).cos() + sample.ln() * 0.1;
-            (0.5 * linear + 0.5 * logarithmic).min(1.0).max(0.0)
+            let v = (ty * consts::PI).cos();
+            let linear = sample - 1.0 + v.sqrt().sqrt();
+            let logarithmic = v + sample.ln() * 0.1;
+            (2.0 * linear.max(0.0) + 0.6 * logarithmic).min(1.0).max(0.0)
         });
         self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
     }
