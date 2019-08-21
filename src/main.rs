@@ -13,6 +13,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::fs;
+use std::f32::consts;
+use std::i32;
 
 use gio::prelude::*;
 use gtk::prelude::*;
@@ -119,14 +122,17 @@ enum ViewEvent {
 }
 
 struct Model {
-    file_name: Option<PathBuf>,
+    flac_reader: Option<claxon::FlacReader<fs::File>>,
     target_size: (i32, i32),
+    spectrum: Vec<f32>,
     sender: glib::SyncSender<ViewEvent>,
+    self_sender: mpsc::SyncSender<ModelEvent>,
 }
 
 enum ModelEvent {
     OpenFile(PathBuf),
     Resize(i32, i32),
+    Decode,
 }
 
 impl View {
@@ -251,11 +257,13 @@ impl View {
 }
 
 impl Model {
-    fn new(sender: glib::SyncSender<ViewEvent>) -> Model {
+    fn new(sender: glib::SyncSender<ViewEvent>, self_sender: mpsc::SyncSender<ModelEvent>) -> Model {
         Model {
-            file_name: None,
+            flac_reader: None,
+            spectrum: Vec::new(),
             target_size: (0, 0),
             sender: sender,
+            self_sender: self_sender,
         }
     }
 
@@ -299,27 +307,77 @@ impl Model {
 
                 // Then try to open the file itself. If this fails, we don't
                 // load the file in the UI.
-                let reader = match claxon::FlacReader::open(&fname) {
-                    Ok(r) => r,
+                self.flac_reader = match claxon::FlacReader::open(&fname) {
+                    Ok(r) => Some(r),
                     Err(err) => return eprintln!("Failed to open file: {:?}", err),
                 };
 
                 // If we have successfully loadede the file, we can tell the UI
-                // to show that in the title.
-                self.file_name = Some(fname);
+                // to show that in the title, and we can begin decoding.
                 self.sender.send(view_event).unwrap();
+                self.self_sender.send(ModelEvent::Decode).unwrap();
             }
             ModelEvent::Resize(width, height) => {
                 self.target_size = (width, height);
-                // TODO: Paint bitmap with useful content.
-                let bitmap = Bitmap::generate(width, height, |x, y| {
-                    let ty = y as f32 / height as f32;
-                    let tx = x as f32 / width as f32;
-                    (7.0 * tx).sin() * (tx.sin() * ty).cos() * 0.5 + 0.5
-                });
-                self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
+                self.repaint();
+            }
+            ModelEvent::Decode => {
+                let flac_reader = match self.flac_reader.as_mut() {
+                    Some(r) => r,
+                    None => return,
+                };
+
+                let bits_per_sample = flac_reader.streaminfo().bits_per_sample;
+                assert!(bits_per_sample < 32);
+                let max = (i32::MAX >> (32 - bits_per_sample)) as f64;
+
+                let mut blocks = flac_reader.blocks();
+                let mut have_more = true;
+
+                // Decode some blocks, but not everything at once. This allows
+                // rendering intermediate updates, and it also keeps the app
+                // more responsive by allowing us to handle other events. Doing
+                // limited work and then re-posting a decode event acts like a
+                // yield point.
+                for i in 0..100 {
+                    let block = match blocks.read_next_or_eof(Vec::new()) {
+                        Ok(Some(b)) => b,
+                        Ok(None) => { have_more = false; break }
+                        Err(err) => return eprintln!("Failed to decode: {:?}", err),
+                    };
+
+                    let mut sum = 0.0_f64;
+                    for &si in block.channel(0).iter() {
+                        let sf = si as f64 / max;
+                        sum = sf.mul_add(sf, sum);
+                    };
+
+                    self.spectrum.push((sum / block.duration() as f64).sqrt() as f32);
+                }
+
+                self.repaint();
+
+                // Continue decoding.
+                if have_more {
+                    self.self_sender.send(ModelEvent::Decode).unwrap();
+                }
             }
         }
+    }
+
+    /// Paint a new bitmap and send it over to the UI thread.
+    fn repaint(&self) {
+        // TODO: Paint bitmap with useful content.
+        let (width, height) = self.target_size;
+        assert!(width > 0);
+        let bitmap = Bitmap::generate(width, height, |x, y| {
+            if self.spectrum.len() == 0 { return 0.0 }
+            let i = x as usize * self.spectrum.len() / width as usize;
+            let ty = (y as f32 / height as f32) - 0.5;
+            let sample = self.spectrum[i];
+            (1.0 + sample.ln() * 0.1).max(0.0) * (ty * consts::PI).cos()
+        });
+        self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
     }
 }
 
@@ -338,8 +396,9 @@ fn main() {
         let (send_view, recv_view) = glib::MainContext::sync_channel(glib::PRIORITY_DEFAULT_IDLE, 10);
 
         // On a background thread, construct the model, and run its event loop.
+        let send_model_clone = send_model.clone();
         thread::spawn(move || {
-            let mut model = Model::new(send_view);
+            let mut model = Model::new(send_view, send_model_clone);
             model.run_event_loop(recv_model);
         });
 
