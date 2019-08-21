@@ -219,12 +219,18 @@ impl View {
 
     fn on_draw(&self, ctx: &cairo::Context) {
         if let Some(pixbuf) = self.pixbuf.as_ref() {
-            // The pixmap is blown up by the scaling factor, so it fills the
-            // widgets size in device pixels. But the Cairo context's default
-            // scale is device-independent, which is right for DPI-unaware apps.
-            // We are aware, so scale down to make the pixmap fill the widget.
-            let f = (self.image.get_scale_factor() as f64).recip();
-            ctx.scale(f, f);
+            // Stretch the bitmap to fill the entire widget. This has two
+            // purposes. First, we sized the bitmap to take the DPI scaling
+            // factor into account, so we may need to scale it down, because the
+            // Cairo context by default measures display pixels, not device
+            // pixels. Second, if you are resizing and the new pixel-perfect
+            // bitmap is still being rendered, we can stretch the old one to
+            // hide the fact that the new one is not ready, instead of having a
+            // gap, or having the image be truncated.
+            let actual_size = self.image.get_allocation();
+            let scale_x = actual_size.width as f64 / pixbuf.get_width() as f64;
+            let scale_y = actual_size.height as f64 / pixbuf.get_height() as f64;
+            ctx.scale(scale_x, scale_y);
             ctx.set_source_pixbuf(pixbuf, 0.0, 0.0);
             ctx.paint();
         }
