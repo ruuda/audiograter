@@ -143,7 +143,7 @@ impl View {
         let window = gtk::ApplicationWindow::new(application);
 
         window.set_title("Spekje");
-        window.set_border_width(10);
+        window.set_border_width(0);
         window.set_position(gtk::WindowPosition::Center);
         window.set_default_size(640, 480);
 
