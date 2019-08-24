@@ -5,6 +5,8 @@
 // it under the terms of the GNU General Public License version 3. A copy
 // of the License is available in the root of the repository.
 
+mod dft;
+
 use std::env;
 use std::iter;
 use std::path::{PathBuf};
@@ -124,7 +126,8 @@ enum ViewEvent {
 struct Model {
     flac_reader: Option<claxon::FlacReader<fs::File>>,
     target_size: (i32, i32),
-    spectrum: Vec<f32>,
+    samples: Vec<f32>,
+    spectrum: Vec<Box<[f32]>>,
     sender: glib::SyncSender<ViewEvent>,
     self_sender: mpsc::SyncSender<ModelEvent>,
 }
@@ -261,6 +264,7 @@ impl Model {
         Model {
             flac_reader: None,
             spectrum: Vec::new(),
+            samples: Vec::new(),
             target_size: (0, 0),
             sender: sender,
             self_sender: self_sender,
@@ -314,6 +318,7 @@ impl Model {
 
                 // Clear leftovers from a previous file, if any.
                 self.spectrum.clear();
+                self.samples.clear();
 
                 // If we have successfully loadede the file, we can tell the UI
                 // to show that in the title, and we can begin decoding.
@@ -325,47 +330,66 @@ impl Model {
                 self.repaint();
             }
             ModelEvent::Decode => {
-                let flac_reader = match self.flac_reader.as_mut() {
-                    Some(r) => r,
-                    None => return,
-                };
-
-                let bits_per_sample = flac_reader.streaminfo().bits_per_sample;
-                assert!(bits_per_sample < 32);
-                let max = (i32::MAX >> (32 - bits_per_sample)) as f64;
-
-                let mut blocks = flac_reader.blocks();
-                let mut have_more = true;
-
-                // Decode some blocks, but not everything at once. This allows
-                // rendering intermediate updates, and it also keeps the app
-                // more responsive by allowing us to handle other events. Doing
-                // limited work and then re-posting a decode event acts like a
-                // yield point.
-                for _ in 0..256 {
-                    let block = match blocks.read_next_or_eof(Vec::new()) {
-                        Ok(Some(b)) => b,
-                        Ok(None) => { have_more = false; break }
-                        Err(err) => return eprintln!("Failed to decode: {:?}", err),
-                    };
-
-                    let mut sum = 0.0_f64;
-                    for &si in block.channel(0).iter() {
-                        let sf = si as f64 / max;
-                        sum = sf.mul_add(sf, sum);
-                    };
-
-                    self.spectrum.push((sum / block.duration() as f64).sqrt() as f32);
-                }
-
-                self.repaint();
-
-                // Continue decoding.
-                if have_more {
-                    self.self_sender.send(ModelEvent::Decode).unwrap();
-                }
+                self.decode();
             }
         }
+    }
+
+    fn decode(&mut self) {
+        let flac_reader = match self.flac_reader.as_mut() {
+            Some(r) => r,
+            None => return,
+        };
+
+        let bits_per_sample = flac_reader.streaminfo().bits_per_sample;
+        assert!(bits_per_sample < 32);
+        let max = (i32::MAX >> (32 - bits_per_sample)) as f32;
+        let inv_max = max.recip();
+
+        let mut blocks = flac_reader.blocks();
+        let mut have_more = true;
+
+        // Decode some blocks, but not everything at once. This allows
+        // rendering intermediate updates, and it also keeps the app
+        // more responsive by allowing us to handle other events. Doing
+        // limited work and then re-posting a decode event acts like a
+        // yield point.
+        let mut buffer = Vec::new();
+        for _ in 0..10 {
+            let block = match blocks.read_next_or_eof(buffer) {
+                Ok(Some(b)) => b,
+                Ok(None) => { have_more = false; break }
+                Err(err) => return eprintln!("Failed to decode: {:?}", err),
+            };
+
+            // Add channel 0 to the samples buffer, converting to f32,
+            // regardless of the bit depth of the input.
+            self.samples.reserve(block.duration() as usize);
+            for &si in block.channel(0).iter() {
+                self.samples.push(inv_max * si as f32);
+            }
+
+            buffer = block.into_buffer();
+        }
+
+        self.compute_spectrum();
+        self.repaint();
+
+        // Continue decoding.
+        if have_more {
+            self.self_sender.send(ModelEvent::Decode).unwrap();
+        }
+    }
+
+    fn compute_spectrum(&mut self) {
+        while self.samples.len() >= 4096 {
+            let dft_of_samples = dft::dft(&self.samples[..4096]);
+            self.spectrum.push(dft_of_samples);
+
+            // Drop the prefix that we just determined the fft of.
+            self.samples = self.samples.split_off(4096);
+        }
+
     }
 
     /// Paint a new bitmap and send it over to the UI thread.
@@ -376,12 +400,13 @@ impl Model {
         let bitmap = Bitmap::generate(width, height, |x, y| {
             if self.spectrum.len() == 0 { return 0.0 }
             let i = x as usize * self.spectrum.len() / width as usize;
-            let ty = (y as f32 / height as f32) - 0.5;
-            let sample = self.spectrum[i];
-            let v = (ty * consts::PI).cos();
-            let linear = sample - 1.0 + v.sqrt().sqrt();
-            let logarithmic = v + sample.ln() * 0.1;
-            (2.0 * linear.max(0.0) + 0.6 * logarithmic).min(1.0).max(0.0)
+            let spectrum_i = &self.spectrum[i];
+
+            assert!(spectrum_i.len() > 0);
+            let j = y as usize * spectrum_i.len() / height as usize;
+            let sample = spectrum_i[j] / spectrum_i.len() as f32;
+
+            (0.5 + sample.ln() * 0.05).min(1.0).max(0.0)
         });
         self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
     }
