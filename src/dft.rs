@@ -164,9 +164,15 @@ fn dft_naive_finds_peaks() {
     let epsilon = 2e-4;
 
     for (i, &result) in result_naive.iter().enumerate() {
+        // The result contains the squared norm of the coefficients, and their
+        // magnitude is proportional to the length of the buffer, so normalize
+        // for those. `dft_naive` returns only half of the coefficients because
+        // the result is symmetric, but that does mean we miss half of the mass,
+        // so we need a factor 2 to compenstate for that.
         let a = 2.0 * result.sqrt() / buffer.len() as f32;
 
         match i {
+            // These are the peaks that the test signal contains.
             5 => assert!((a - 1.0).abs() < epsilon),
             31 => assert!((a - 2.0).abs() < epsilon),
             53 => assert!((a - 5.0).abs() < epsilon),
