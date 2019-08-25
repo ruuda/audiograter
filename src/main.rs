@@ -355,7 +355,7 @@ impl Model {
         // limited work and then re-posting a decode event acts like a
         // yield point.
         let mut buffer = Vec::new();
-        for _ in 0..10 {
+        for _ in 0..100 {
             let block = match blocks.read_next_or_eof(buffer) {
                 Ok(Some(b)) => b,
                 Ok(None) => { have_more = false; break }
@@ -383,7 +383,7 @@ impl Model {
 
     fn compute_spectrum(&mut self) {
         while self.samples.len() >= 4096 {
-            let dft_of_samples = dft::dft(&self.samples[..4096]);
+            let dft_of_samples = dft::dft_fast(&self.samples[..4096]);
             self.spectrum.push(dft_of_samples);
 
             // Drop the prefix that we just determined the fft of.
