@@ -17,22 +17,22 @@ use std::f32::consts;
 ///
 /// Returns the squared norms of the results. Only resturns the first half (+1)
 /// of the coefficients, as they are symmetric.
-pub fn dft(xs: &[f32]) -> Box<[f32]> {
+pub fn dft_naive(xs: &[f32]) -> Box<[f32]> {
     let half_len = xs.len() / 2;
     assert_eq!(half_len * 2, xs.len(), "Length must be multiple of 2.");
 
     let mut result = Vec::with_capacity(half_len + 1);
-    let inv_len = (xs.len() as f32).recip();
+    let inv_len = (xs.len() as f64).recip();
 
     for k in 0..=half_len {
-        let factor = consts::PI * 2.0 * k as f32 * inv_len;
-        let mut real = 0.0_f32;
-        let mut imag = 0.0_f32;
-        for (n, &x) in xs.iter().enumerate() {
-            real = x.mul_add((factor * n as f32).cos(), real);
-            imag = x.mul_add((-factor * n as f32).sin(), imag);
+        let factor = std::f64::consts::PI * 2.0 * k as f64 * inv_len;
+        let mut real = 0.0_f64;
+        let mut imag = 0.0_f64;
+        for (n, x) in xs.iter().map(|&x| x as f64).enumerate() {
+            real = x.mul_add((factor * n as f64).cos(), real);
+            imag = x.mul_add((-factor * n as f64).sin(), imag);
         }
-        result.push(real * real + imag * imag);
+        result.push((real * real + imag * imag) as f32);
     }
 
     result.into_boxed_slice()
@@ -130,4 +130,65 @@ pub fn dft_fast(xs: &[f32]) -> Box<[f32]> {
         .collect();
 
     result.into_boxed_slice()
+}
+
+/// Build a signal which is a superposition of known waves.
+///
+/// Frequencies and amplitudes:
+///
+///     1.0 at 5.
+///     2.0 at 31.
+///     5.0 at 53.
+///     7.0 at 541.
+#[cfg(test)]
+fn generate_test_signal() -> Box<[f32]> {
+    let two_pi = 6.283185307179586;
+    let buffer: Vec<f32> = (0..4096)
+        .map(|i| {
+            let t = i as f32 / 4096.0;
+            0.0
+            + 1.0 * (t *   5.0 * two_pi).sin()
+            + 2.0 * (t *  31.0 * two_pi).cos()
+            + 5.0 * (t *  53.0 * two_pi).sin()
+            + 7.0 * (t * 541.0 * two_pi).sin()
+        })
+        .collect();
+
+    buffer.into_boxed_slice()
+}
+
+#[test]
+fn dft_naive_finds_peaks() {
+    let buffer = generate_test_signal();
+    let result_naive = dft_naive(&buffer[..]);
+    let epsilon = 2e-4;
+
+    for (i, &result) in result_naive.iter().enumerate() {
+        let a = 2.0 * result.sqrt() / buffer.len() as f32;
+
+        match i {
+            5 => assert!((a - 1.0).abs() < epsilon),
+            31 => assert!((a - 2.0).abs() < epsilon),
+            53 => assert!((a - 5.0).abs() < epsilon),
+            541 => assert!((a - 7.0).abs() < epsilon),
+            _ => assert!(a < epsilon, "Unexpected peak of {} at {}", a, i),
+        }
+    }
+}
+
+#[test]
+fn dft_fast_equals_dft_naive() {
+    let buffer = generate_test_signal();
+    let result_naive = dft_naive(&buffer[..]);
+    let result_fast = dft_fast(&buffer[..]);
+
+    for (i, (&naive, &fast)) in result_naive.iter().zip(result_fast.iter()).enumerate() {
+        println!("{:4}: {:.2}  {:.2}", i, naive.sqrt(), fast.sqrt());
+    }
+
+    for (i, (&naive, &fast)) in result_naive.iter().zip(result_fast.iter()).enumerate() {
+        let diff = (naive / (fast + 1e-10)).max(fast / (naive + 1e-10));
+        assert!(diff < 1.0001, "Difference at index {}: {} vs {}.", i, naive, fast);
+        assert!(diff > 0.9999, "Difference at index {}: {} vs {}.", i, naive, fast);
+    }
 }
