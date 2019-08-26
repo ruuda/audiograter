@@ -402,8 +402,10 @@ impl Model {
             let spectrum_i = &self.spectrum[i];
 
             assert!(spectrum_i.len() > 0);
-            let j = y as usize * spectrum_i.len() / height as usize;
-            let sample = spectrum_i[j] / spectrum_i.len() as f32;
+            let yf = y as f32 / height as f32;
+            let freq = (10.0_f32.powf(-yf) - 0.1) / 0.9;
+            let j = (freq * spectrum_i.len() as f32) as usize;
+            let sample = spectrum_i[j.min(spectrum_i.len() - 1)] / spectrum_i.len() as f32;
 
             (0.5 + sample.ln() * 0.05).min(1.0).max(0.0)
         });
