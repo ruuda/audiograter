@@ -15,7 +15,7 @@ use std::f32::consts;
 
 /// Apply a disrete Fourier Transform.
 ///
-/// Returns the squared norms of the results. Only resturns the first half (+1)
+/// Returns the squared norms of the results. Only resturns the first half
 /// of the coefficients, as they are symmetric.
 pub fn dft_naive(xs: &[f32]) -> Box<[f32]> {
     let half_len = xs.len() / 2;
@@ -24,7 +24,7 @@ pub fn dft_naive(xs: &[f32]) -> Box<[f32]> {
     let mut result = Vec::with_capacity(half_len + 1);
     let inv_len = (xs.len() as f64).recip();
 
-    for k in 0..=half_len {
+    for k in 0..half_len {
         let factor = std::f64::consts::PI * 2.0 * k as f64 * inv_len;
         let mut real = 0.0_f64;
         let mut imag = 0.0_f64;
@@ -137,7 +137,7 @@ pub fn dft_fast(xs: &[f32]) -> Box<[f32]> {
 
     let result: Vec<f32> = xs_complex
         .iter()
-        .take(half_len + 1)
+        .take(half_len)
         .map(|&z| z.real * z.real + z.imag * z.imag)
         .collect();
 
