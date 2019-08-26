@@ -201,12 +201,7 @@ fn dft_fast_equals_dft_naive() {
     let result_fast = dft_fast(&buffer[..]);
 
     for (i, (&naive, &fast)) in result_naive.iter().zip(result_fast.iter()).enumerate() {
-        println!("{:4}: {:.2}  {:.2}", i, naive.sqrt(), fast.sqrt());
-    }
-
-    for (i, (&naive, &fast)) in result_naive.iter().zip(result_fast.iter()).enumerate() {
-        let diff = (naive / (fast + 1e-10)).max(fast / (naive + 1e-10));
-        assert!(diff < 1.0001, "Difference at index {}: {} vs {}.", i, naive, fast);
-        assert!(diff > 0.9999, "Difference at index {}: {} vs {}.", i, naive, fast);
+        let diff = (naive.sqrt() - fast.sqrt()).abs() / (buffer.len() as f32);
+        assert!(diff < 2e-4, "Difference at index {}: {} vs {}.", i, naive, fast);
     }
 }
