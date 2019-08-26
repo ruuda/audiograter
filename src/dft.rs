@@ -47,8 +47,8 @@ struct Complex {
 impl Complex {
     pub fn mul_add(self, factor: Complex, term: Complex) -> Complex {
         Complex {
-            real: self.real.mul_add(factor.real, term.real),
-            imag: self.imag.mul_add(factor.imag, term.imag),
+            real: self.real.mul_add(factor.real, (-self.imag).mul_add(factor.imag, term.real)),
+            imag: self.real.mul_add(factor.imag, self.imag.mul_add(factor.real, term.imag)),
         }
     }
 }
@@ -69,6 +69,16 @@ impl std::ops::Sub for Complex {
         Complex {
             real: self.real - other.real,
             imag: self.imag - other.imag,
+        }
+    }
+}
+
+impl std::ops::Neg for Complex {
+    type Output = Complex;
+    fn neg(self) -> Complex {
+        Complex {
+            real: -self.real,
+            imag: -self.imag,
         }
     }
 }
@@ -98,11 +108,13 @@ fn cooley_tukey(xs: &mut [Complex], tmp: &mut [Complex]) {
     for i in 0..half_len {
         let arg = (i as f32) * two_pi_over_len;
         let cexp = Complex {
-            real: -arg.cos(),
-            imag: arg.sin(),
+            real: arg.cos(),
+            imag: -arg.sin(),
         };
-        xs[i + half_len] = cexp.mul_add(xs[i + half_len], xs[i]);
-        xs[i] = xs[i] + xs[i] - xs[i + half_len];
+        let even = xs[i];
+        let odd = xs[i + half_len];
+        xs[i]            = cexp.mul_add( odd, even);
+        xs[i + half_len] = cexp.mul_add(-odd, even);
     }
 }
 
