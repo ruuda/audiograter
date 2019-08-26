@@ -16,7 +16,6 @@ use std::thread;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::fs;
-use std::f32::consts;
 use std::i32;
 
 use gio::prelude::*;

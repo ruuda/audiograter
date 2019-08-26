@@ -11,12 +11,11 @@
 // dependencies. So let's see how far I get on my own. It will not be the
 // fastest, but perhaps it will be fast enough.
 
-use std::f32::consts;
-
 /// Apply a disrete Fourier Transform.
 ///
 /// Returns the squared norms of the results. Only resturns the first half
 /// of the coefficients, as they are symmetric.
+#[cfg(test)]
 pub fn dft_naive(xs: &[f32]) -> Box<[f32]> {
     let half_len = xs.len() / 2;
     assert_eq!(half_len * 2, xs.len(), "Length must be multiple of 2.");
