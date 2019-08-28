@@ -416,7 +416,9 @@ impl Model {
 fn main() {
     let application = gtk::Application::new(
         Some("nl.ruuda.spekje"),
-        Default::default(),
+        // Allow multiple instances of the application, even though we did
+        // provide an application id.
+        gio::ApplicationFlags::NON_UNIQUE,
     ).unwrap();
 
     // When the application starts, run all of this on the main thread.
