@@ -381,14 +381,14 @@ impl Model {
     }
 
     fn compute_spectrum(&mut self) {
-        while self.samples.len() >= 4096 {
-            let dft_of_samples = dft::dft_fast(&self.samples[..4096]);
+        while self.samples.len() >= 8192 {
+            let dft_of_samples = dft::dft_fast(&self.samples[..8192]);
             self.spectrum.push(dft_of_samples);
 
-            // Drop the prefix that we just determined the fft of.
+            // Drop half of the samples that we just determined the fft of. The
+            // other half will go again next time, for overlapping windows.
             self.samples = self.samples.split_off(4096);
         }
-
     }
 
     /// Paint a new bitmap and send it over to the UI thread.
