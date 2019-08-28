@@ -117,7 +117,15 @@ fn cooley_tukey(xs: &mut [Complex], tmp: &mut [Complex]) {
     }
 }
 
-pub fn dft_fast(xs: &[f32]) -> Box<[f32]> {
+pub fn hann(len: usize, i: usize) -> f32 {
+    // Factor used for the Hann window, normalized (the factor 2.0) to ensure
+    // that the integral of hann(i) is 1.0.
+    let inv_len = ((len - 1) as f32).recip();
+    let factor_sqrt = (i as f32 * std::f32::consts::PI * inv_len).sin();
+    2.0 * (factor_sqrt * factor_sqrt)
+}
+
+pub fn dft_fast(xs: &[f32], window: impl Fn(usize, usize) -> f32) -> Box<[f32]> {
     let half_len = xs.len() / 2;
     assert_eq!(half_len * 2, xs.len(), "Length must be even.");
 
@@ -127,21 +135,11 @@ pub fn dft_fast(xs: &[f32]) -> Box<[f32]> {
     };
     let mut tmp: Vec<_> = std::iter::repeat(z).take(half_len).collect();
 
-    // Factor used for the Hann window, normalized (the factor 2.0) to ensure
-    // that the integral of hann(i) is 1.0.
-    let inv_len = ((xs.len() - 1) as f32).recip();
-    let hann = |i: usize| {
-        let factor_sqrt = (i as f32 * std::f32::consts::PI * inv_len).sin();
-        2.0 * factor_sqrt * factor_sqrt
-    };
-
+    let len = xs.len();
     let mut xs_complex: Vec<_> = xs
         .iter()
         .enumerate()
-        .map(|(i, &x)| Complex {
-            real: x * hann(i),
-            imag: 0.0,
-        })
+        .map(|(i, &x)| Complex { real: x * window(len, i), imag: 0.0, })
         .collect();
 
     cooley_tukey(&mut xs_complex[..], &mut tmp[..]);
@@ -207,9 +205,10 @@ fn dft_naive_finds_peaks() {
 
 #[test]
 fn dft_fast_equals_dft_naive() {
+    let rect_window = |_, _| 1.0;
     let buffer = generate_test_signal();
     let result_naive = dft_naive(&buffer[..]);
-    let result_fast = dft_fast(&buffer[..]);
+    let result_fast = dft_fast(&buffer[..], rect_window);
 
     for (i, (&naive, &fast)) in result_naive.iter().zip(result_fast.iter()).enumerate() {
         let diff = (naive.sqrt() - fast.sqrt()).abs() / (buffer.len() as f32);

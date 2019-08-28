@@ -382,7 +382,7 @@ impl Model {
 
     fn compute_spectrum(&mut self) {
         while self.samples.len() >= 8192 {
-            let dft_of_samples = dft::dft_fast(&self.samples[..8192]);
+            let dft_of_samples = dft::dft_fast(&self.samples[..8192], dft::hann);
             self.spectrum.push(dft_of_samples);
 
             // Drop half of the samples that we just determined the fft of. The
