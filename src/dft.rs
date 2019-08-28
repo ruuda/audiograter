@@ -127,9 +127,21 @@ pub fn dft_fast(xs: &[f32]) -> Box<[f32]> {
     };
     let mut tmp: Vec<_> = std::iter::repeat(z).take(half_len).collect();
 
+    // Factor used for the Hann window, normalized (the factor 2.0) to ensure
+    // that the integral of hann(i) is 1.0.
+    let inv_len = ((xs.len() - 1) as f32).recip();
+    let hann = |i: usize| {
+        let factor_sqrt = (i as f32 * std::f32::consts::PI * inv_len).sin();
+        2.0 * factor_sqrt * factor_sqrt
+    };
+
     let mut xs_complex: Vec<_> = xs
         .iter()
-        .map(|&x| Complex { real: x, imag: 0.0, })
+        .enumerate()
+        .map(|(i, &x)| Complex {
+            real: x * hann(i),
+            imag: 0.0,
+        })
         .collect();
 
     cooley_tukey(&mut xs_complex[..], &mut tmp[..]);
