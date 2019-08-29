@@ -260,9 +260,35 @@ impl View {
         }
 
         // Draw a frame around the spectrum view.
-        ctx.set_line_width(1.0);
-        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.6);
         ctx.rectangle(0.5, 0.5, (actual_size.width - 1) as f64, (actual_size.height - 1) as f64);
+
+        let tick_size = 5.0;
+
+        // TODO: Point ticks outside rather than inside.
+        for i in 1..10 {
+            let x = 0.0;
+            let y = (actual_size.height - 1) as f64 / 10.0 * (i as f64);
+            ctx.move_to(x, y);
+            ctx.line_to(x + tick_size, y);
+
+            let x = (actual_size.width - 1) as f64;
+            ctx.move_to(x, y);
+            ctx.line_to(x - tick_size, y);
+        }
+
+        for i in 1..10 {
+            let y = 0.0;
+            let x = (actual_size.width - 1) as f64 / 10.0 * (i as f64);
+            ctx.move_to(x, y);
+            ctx.line_to(x, y + tick_size);
+
+            let y = (actual_size.height - 1) as f64;
+            ctx.move_to(x, y);
+            ctx.line_to(x, y - tick_size);
+        }
+
+        ctx.set_line_width(1.0);
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.8);
         ctx.stroke();
     }
 
