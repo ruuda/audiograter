@@ -22,6 +22,10 @@ use gio::prelude::*;
 use gtk::prelude::*;
 use gdk::prelude::*;
 
+// For some reason, the wildcard import above does not import this,
+// we need to do it manually.
+use gtk::prelude::SettingsExt;
+
 /// Given t in [0, 1], return an RGB value in [0, 1]^3.
 pub fn colormap_magma(t: f32) -> (f32, f32, f32) {
     // Based on https://www.shadertoy.com/view/WlfXRN (licensed CC0), which in
@@ -420,6 +424,10 @@ fn main() {
         // provide an application id.
         gio::ApplicationFlags::NON_UNIQUE,
     ).unwrap();
+
+    if let Some(settings) = gtk::Settings::get_default() {
+        settings.set_property_gtk_application_prefer_dark_theme(true);
+    }
 
     // When the application starts, run all of this on the main thread.
     application.connect_activate(move |app| {
