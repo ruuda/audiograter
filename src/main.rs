@@ -150,7 +150,7 @@ impl View {
         let window = gtk::ApplicationWindow::new(application);
 
         window.set_title("Spekje");
-        window.set_border_width(0);
+        window.set_border_width(10);
         window.set_position(gtk::WindowPosition::Center);
         window.set_default_size(640, 480);
 
@@ -237,6 +237,9 @@ impl View {
     }
 
     fn on_draw(&self, ctx: &cairo::Context) {
+        let actual_size = self.image.get_allocation();
+        let transform = ctx.get_matrix();
+
         if let Some(pixbuf) = self.pixbuf.as_ref() {
             // Stretch the bitmap to fill the entire widget. This has two
             // purposes. First, we sized the bitmap to take the DPI scaling
@@ -246,13 +249,21 @@ impl View {
             // bitmap is still being rendered, we can stretch the old one to
             // hide the fact that the new one is not ready, instead of having a
             // gap, or having the image be truncated.
-            let actual_size = self.image.get_allocation();
             let scale_x = actual_size.width as f64 / pixbuf.get_width() as f64;
             let scale_y = actual_size.height as f64 / pixbuf.get_height() as f64;
             ctx.scale(scale_x, scale_y);
             ctx.set_source_pixbuf(pixbuf, 0.0, 0.0);
             ctx.paint();
+
+            // Undo the scale, so we can draw in display pixels again later.
+            ctx.set_matrix(transform);
         }
+
+        // Draw a frame around the spectrum view.
+        ctx.set_line_width(1.0);
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.6);
+        ctx.rectangle(0.5, 0.5, (actual_size.width - 1) as f64, (actual_size.height - 1) as f64);
+        ctx.stroke();
     }
 
     /// Handle one event. Should only be called on the main thread.
