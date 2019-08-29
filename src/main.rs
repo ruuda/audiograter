@@ -116,6 +116,7 @@ impl Bitmap {
 /// order to swap out the pixbuf.
 struct View {
     window: gtk::ApplicationWindow,
+    header_bar: gtk::HeaderBar,
     image: gtk::DrawingArea,
     pixbuf: Option<gdk_pixbuf::Pixbuf>,
     sender: mpsc::SyncSender<ModelEvent>,
@@ -153,6 +154,11 @@ impl View {
         window.set_position(gtk::WindowPosition::Center);
         window.set_default_size(640, 480);
 
+        let header_bar = gtk::HeaderBar::new();
+        header_bar.set_show_close_button(true);
+        header_bar.set_title(Some("Spekje"));
+        window.set_titlebar(Some(&header_bar));
+
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
         window.add(&vbox);
 
@@ -184,6 +190,7 @@ impl View {
         let view_cell = Rc::new(RefCell::new(
             View {
                 window: window.clone(),
+                header_bar: header_bar.clone(),
                 image: image.clone(),
                 pixbuf: None,
                 sender: sender,
@@ -252,7 +259,8 @@ impl View {
     fn handle_event(&mut self, event: ViewEvent) {
         match event {
             ViewEvent::SetTitle(fname) => {
-                self.window.set_title(&format!("{} - Spekje", fname));
+                self.window.set_title(&fname);
+                self.header_bar.set_title(Some(&fname));
             }
             ViewEvent::SetView(bitmap) => {
                 self.pixbuf = Some(bitmap.into_pixbuf());
