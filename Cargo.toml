@@ -15,7 +15,7 @@ gtk        = "0.7.0"
 pango      = "0.7.0"
 pangocairo = "0.8.0"
 
-[profile.debug]
+[profile.dev]
 panic = "abort"
 
 [profile.release]
