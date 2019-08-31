@@ -295,8 +295,22 @@ impl View {
             let x = 0.0;
             let y = (actual_size.height - 1) as f64 / 10.0 * (i as f64);
             let layout = self.window.create_pango_layout(Some("22.0 kHz")).unwrap();
-            let (w, h) = layout.get_pixel_size();
-            ctx.move_to(x + tick_size * 2.0, y - h as f64 * 0.5);
+
+            // Vertically align the label text to the tick.
+            // Based on http://gtk.10911.n7.nabble.com/Pango-Accessing-x-height-mean-line-in-Pango-layout-td79374.html.
+            let pango_context = layout.get_context().unwrap();
+            let font = layout.get_font_description();
+            let language = None;
+            let metrics = pango_context.get_metrics(font.as_ref(), language).unwrap();
+            let baseline = layout.get_baseline();
+            let strike_pos = metrics.get_strikethrough_position();
+            let strike_thick = metrics.get_strikethrough_thickness();
+            let x_center_font_units = baseline - strike_pos - strike_thick / 2;
+            // Convert font units to view pixels, see also
+            // https://developer.gnome.org/pango/stable/pango-Glyph-Storage.html#PANGO-PIXELS:CAPS
+            let x_center_pixels = (x_center_font_units + 512) >> 10;
+
+            ctx.move_to(x + tick_size * 2.0, y - x_center_pixels as f64);
             pangocairo::functions::show_layout(ctx, &layout);
         }
     }
