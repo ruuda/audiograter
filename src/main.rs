@@ -470,16 +470,26 @@ impl Model {
         assert!(width > 0);
         let bitmap = Bitmap::generate(width, height, |x, y| {
             if self.spectrum.len() == 0 { return 0.0 }
-            let i = x as usize * self.spectrum.len() / width as usize;
-            let spectrum_i = &self.spectrum[i];
+            let i_min = x as usize * self.spectrum.len() / width as usize;
+            let i_max = (x + 1) as usize * self.spectrum.len() / width as usize;
+            let mut value = 0.0;
+            let mut n = 0.0;
 
-            assert!(spectrum_i.len() > 0);
-            let yf = y as f32 / height as f32;
-            let freq = (10.0_f32.powf(-yf) - 0.1) / 0.9;
-            let j = (freq * spectrum_i.len() as f32) as usize;
-            let sample = spectrum_i[j.min(spectrum_i.len() - 1)] / spectrum_i.len() as f32;
+            for i in i_min..i_max.max(i_min + 1) {
+                let spectrum_i = &self.spectrum[i];
 
-            (0.5 + sample.ln() * 0.05).min(1.0).max(0.0)
+                assert!(spectrum_i.len() > 0);
+                let yf = y as f32 / height as f32;
+                let freq = (10.0_f32.powf(-yf) - 0.1) / 0.9;
+                let j = (freq * spectrum_i.len() as f32) as usize;
+                let sample = spectrum_i[j.min(spectrum_i.len() - 1)] / spectrum_i.len() as f32;
+
+                value += sample;
+                n += 1.0;
+            }
+
+            value = value / n;
+            (0.5 + value.ln() * 0.05).min(1.0).max(0.0)
         });
         self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
     }
