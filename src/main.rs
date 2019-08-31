@@ -290,6 +290,15 @@ impl View {
         ctx.set_line_width(1.0);
         ctx.set_source_rgba(1.0, 1.0, 1.0, 0.8);
         ctx.stroke();
+
+        for i in 1..10 {
+            let x = 0.0;
+            let y = (actual_size.height - 1) as f64 / 10.0 * (i as f64);
+            let layout = self.window.create_pango_layout(Some("22.0 kHz")).unwrap();
+            let (w, h) = layout.get_pixel_size();
+            ctx.move_to(x + tick_size * 2.0, y - h as f64 * 0.5);
+            pangocairo::functions::show_layout(ctx, &layout);
+        }
     }
 
     /// Handle one event. Should only be called on the main thread.
