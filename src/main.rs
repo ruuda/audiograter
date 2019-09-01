@@ -28,6 +28,7 @@ use gtk::prelude::SettingsExt;
 
 /// The number of samples in a single DFT window.
 const WINDOW_LEN: usize = 8192;
+const SPECTRUM_LEN: usize = WINDOW_LEN / 2;
 
 /// The number of samples between two DFT windows.
 ///
@@ -62,6 +63,25 @@ pub fn colormap_magma(t: f32) -> (f32, f32, f32) {
     (result[0], result[1], result[2])
 }
 
+/// Map the unit interval to the range `(min_y, max_y)`.
+///
+/// The scale is logarithmic near `min_y`, and linear near `max_y`. This way, we
+/// can meaningfully distinguish tones in the low frequencies, and it makes
+/// sense for music, where a doubling of the frequency corresponds to an one
+/// octrave increase in pitch.
+///
+/// Yet, at the high end of the spectrum, I want to be able to see if anything
+/// was cut off around 18 kHz to see if lossy compression was involved, and in
+/// general, to look at patterns in the frequency spectrum that would be
+/// squashed severely on a log scale.
+#[inline]
+pub fn map_y_axis(y: f64, min_y: f64, max_y: f64) -> f64 {
+    let log_min_y = min_y.log2();
+    let log_max_y = max_y.log2();
+    let y_log = (log_min_y + y * (log_max_y - log_min_y)).exp2();
+    let y_lin = min_y + y * (max_y - min_y);
+    y_lin * y + y_log * (1.0 - y)
+}
 
 /// Thread-safe bitmap that we can fill on one thread and display on another.
 struct Bitmap {
@@ -136,11 +156,29 @@ enum ViewEvent {
 }
 
 struct Model {
+    /// The currently loaded file.
     flac_reader: Option<claxon::FlacReader<fs::File>>,
+
+    /// The target size of the spectogram bitmap, in device pixels.
     target_size: (i32, i32),
+
+    /// The duration of the loaded file, in samples.
+    duration: Option<u64>,
+
+    /// The sample rate of the loaded file, in Hz.
+    /// The value is only meaningful when `flac_reader` is not `None`.
+    sample_rate: u32,
+
+    /// Decoded samples that we still need to take the DFT of.
     samples: Vec<f32>,
+
+    /// DFTs of windows of the decoded samples.
     spectrum: Vec<Box<[f32]>>,
+
+    /// A sender to send messages to the UI.
     sender: glib::SyncSender<ViewEvent>,
+
+    /// A sender to send messages to this model.
     self_sender: mpsc::SyncSender<ModelEvent>,
 }
 
@@ -345,6 +383,8 @@ impl Model {
             spectrum: Vec::new(),
             samples: Vec::new(),
             target_size: (0, 0),
+            duration: None,
+            sample_rate: 1,
             sender: sender,
             self_sender: self_sender,
         }
@@ -391,7 +431,12 @@ impl Model {
                 // Then try to open the file itself. If this fails, we don't
                 // load the file in the UI.
                 self.flac_reader = match claxon::FlacReader::open(&fname) {
-                    Ok(r) => Some(r),
+                    Ok(r) => {
+                        let streaminfo = r.streaminfo();
+                        self.duration = streaminfo.samples;
+                        self.sample_rate = streaminfo.sample_rate;
+                        Some(r)
+                    }
                     Err(err) => return eprintln!("Failed to open file: {:?}", err),
                 };
 
@@ -403,9 +448,14 @@ impl Model {
                 // to show that in the title, and we can begin decoding.
                 self.sender.send(view_event).unwrap();
                 self.self_sender.send(ModelEvent::Decode).unwrap();
+
+                // Also, we should tell the UI where the tick labels are going
+                // to be.
+                self.recompute_ticks();
             }
             ModelEvent::Resize(width, height) => {
                 self.target_size = (width, height);
+                self.recompute_ticks();
                 self.repaint();
             }
             ModelEvent::Decode => {
@@ -470,9 +520,33 @@ impl Model {
         }
     }
 
+    fn recompute_ticks(&self) {
+        let (_width, height) = self.target_size;
+        let num_major_ticks_y = 10;
+
+        // The minimal period that the DFT picks up, above the constant factor,
+        // is a single window.
+        let hz_min = self.sample_rate as f64 / WINDOW_LEN as f64;
+
+        // The maximal frequency is half of `WINDOW_LEN` periods in the window.
+        // As there is one bucket per sample, that is half of the sample rate.
+        let hz_max = self.sample_rate as f64 / 2.0;
+
+        for i in 0..num_major_ticks_y {
+            let t = (i as f64) / (num_major_ticks_y - 1) as f64;
+            let value_hz = map_y_axis(t, hz_min, hz_max);
+            let ypos = (height - 1) as f64 * t;
+            let label = match () {
+                () if value_hz > 10_000.0 => format!("{:.1} kHz", value_hz / 1000.0),
+                () if value_hz >   1000.0 => format!("{:.2} kHz", value_hz / 1000.0),
+                _                         => format!("{:.0} Hz",  value_hz),
+            };
+            println!("{:.0} / {}: {}", ypos, height, label);
+        }
+    }
+
     /// Paint a new bitmap and send it over to the UI thread.
     fn repaint(&self) {
-        // TODO: Paint bitmap with useful content.
         let (width, height) = self.target_size;
         assert!(width > 0);
         let bitmap = Bitmap::generate(width, height, |x, y| {
@@ -485,11 +559,11 @@ impl Model {
             for i in i_min..i_max.max(i_min + 1) {
                 let spectrum_i = &self.spectrum[i];
 
-                assert!(spectrum_i.len() > 0);
-                let yf = y as f32 / height as f32;
-                let freq = (10.0_f32.powf(-yf) - 0.1) / 0.9;
-                let j = (freq * spectrum_i.len() as f32) as usize;
-                let sample = spectrum_i[j.min(spectrum_i.len() - 1)] / spectrum_i.len() as f32;
+                assert_eq!(spectrum_i.len(), SPECTRUM_LEN);
+                let yf = 1.0 - y as f64 / (height - 1) as f64;
+                let jf = map_y_axis(yf, 1.0, (SPECTRUM_LEN - 1) as f64);
+                let j = jf.trunc() as usize;
+                let sample = spectrum_i[j.min(SPECTRUM_LEN - 1)] / SPECTRUM_LEN as f32;
 
                 value += sample;
                 n += 1.0;
