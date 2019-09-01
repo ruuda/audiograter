@@ -1,4 +1,4 @@
-// Spekje -- Spectrogram viewer
+// Grater -- Spectrogram viewer
 // Copyright 2019 Ruud van Asseldonk
 
 // This program is free software: you can redistribute it and/or modify
@@ -149,14 +149,14 @@ impl View {
     ) -> Rc<RefCell<View>> {
         let window = gtk::ApplicationWindow::new(application);
 
-        window.set_title("Spekje");
+        window.set_title("Grater");
         window.set_border_width(10);
         window.set_position(gtk::WindowPosition::Center);
         window.set_default_size(640, 480);
 
         let header_bar = gtk::HeaderBar::new();
         header_bar.set_show_close_button(true);
-        header_bar.set_title(Some("Spekje"));
+        header_bar.set_title(Some("Grater"));
         window.set_titlebar(Some(&header_bar));
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 10);
@@ -497,7 +497,7 @@ impl Model {
 
 fn main() {
     let application = gtk::Application::new(
-        Some("nl.ruuda.spekje"),
+        Some("nl.ruuda.grater"),
         // Allow multiple instances of the application, even though we did
         // provide an application id.
         gio::ApplicationFlags::NON_UNIQUE,
