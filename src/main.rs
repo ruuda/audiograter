@@ -399,7 +399,7 @@ impl Model {
                 self.spectrum.clear();
                 self.samples.clear();
 
-                // If we have successfully loadede the file, we can tell the UI
+                // If we have successfully loaded the file, we can tell the UI
                 // to show that in the title, and we can begin decoding.
                 self.sender.send(view_event).unwrap();
                 self.self_sender.send(ModelEvent::Decode).unwrap();
