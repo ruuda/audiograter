@@ -26,6 +26,14 @@ use gdk::prelude::*;
 // we need to do it manually.
 use gtk::prelude::SettingsExt;
 
+/// The number of samples in a single DFT window.
+const WINDOW_LEN: usize = 8192;
+
+/// The number of samples between two DFT windows.
+///
+/// This is smaller than `WINDOW_LEN`, which means that windows overlap.
+const WINDOW_OFF: usize = 4096;
+
 /// Given t in [0, 1], return an RGB value in [0, 1]^3.
 pub fn colormap_magma(t: f32) -> (f32, f32, f32) {
     // Based on https://www.shadertoy.com/view/WlfXRN (licensed CC0), which in
@@ -453,13 +461,12 @@ impl Model {
     }
 
     fn compute_spectrum(&mut self) {
-        while self.samples.len() >= 8192 {
-            let dft_of_samples = dft::dft_fast(&self.samples[..8192], dft::hann);
+        while self.samples.len() >= WINDOW_LEN {
+            let dft_of_samples = dft::dft_fast(&self.samples[..WINDOW_LEN], dft::hann);
             self.spectrum.push(dft_of_samples);
 
-            // Drop half of the samples that we just determined the fft of. The
-            // other half will go again next time, for overlapping windows.
-            self.samples = self.samples.split_off(4096);
+            // Drop some samples to advance to the next window.
+            self.samples = self.samples.split_off(WINDOW_OFF);
         }
     }
 
