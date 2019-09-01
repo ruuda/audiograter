@@ -137,6 +137,15 @@ impl Bitmap {
     }
 }
 
+/// An axis tick label on the spectrogram.
+struct Tick {
+    /// Tick position, where 0.0 is bottom/left and 1.0 is top/right.
+    position: f64,
+
+    /// Value to display next to the tick.
+    label: String,
+}
+
 /// Container for the application widgets.
 ///
 /// Although GTK widgets are already refcounted, the view itself is also kept in
@@ -146,6 +155,8 @@ struct View {
     window: gtk::ApplicationWindow,
     header_bar: gtk::HeaderBar,
     image: gtk::DrawingArea,
+    x_ticks: Vec<Tick>,
+    y_ticks: Vec<Tick>,
     pixbuf: Option<gdk_pixbuf::Pixbuf>,
     sender: mpsc::SyncSender<ModelEvent>,
 }
@@ -153,6 +164,7 @@ struct View {
 enum ViewEvent {
     SetTitle(String),
     SetView(Bitmap),
+    SetTicks(Vec<Tick>, Vec<Tick>),
 }
 
 struct Model {
@@ -238,6 +250,8 @@ impl View {
                 window: window.clone(),
                 header_bar: header_bar.clone(),
                 image: image.clone(),
+                x_ticks: Vec::new(),
+                y_ticks: Vec::new(),
                 pixbuf: None,
                 sender: sender,
             }
@@ -311,24 +325,24 @@ impl View {
         let tick_size = 5.0;
 
         // TODO: Point ticks outside rather than inside.
-        for i in 1..10 {
+        for tick in &self.y_ticks {
             let x = 0.0;
-            let y = (actual_size.height - 1) as f64 / 10.0 * (i as f64);
+            let y = actual_size.height as f64 * (1.0 - tick.position);
             ctx.move_to(x, y);
             ctx.line_to(x + tick_size, y);
 
-            let x = (actual_size.width - 1) as f64;
+            let x = actual_size.width as f64;
             ctx.move_to(x, y);
             ctx.line_to(x - tick_size, y);
         }
 
-        for i in 1..10 {
+        for tick in &self.x_ticks {
             let y = 0.0;
-            let x = (actual_size.width - 1) as f64 / 10.0 * (i as f64);
+            let x = actual_size.width as f64 * tick.position;
             ctx.move_to(x, y);
             ctx.line_to(x, y + tick_size);
 
-            let y = (actual_size.height - 1) as f64;
+            let y = actual_size.height as f64;
             ctx.move_to(x, y);
             ctx.line_to(x, y - tick_size);
         }
@@ -337,10 +351,10 @@ impl View {
         ctx.set_source_rgba(1.0, 1.0, 1.0, 0.8);
         ctx.stroke();
 
-        for i in 1..10 {
+        for tick in &self.y_ticks {
             let x = 0.0;
-            let y = (actual_size.height - 1) as f64 / 10.0 * (i as f64);
-            let layout = self.window.create_pango_layout(Some("22.0 kHz")).unwrap();
+            let y = actual_size.height as f64 * (1.0 - tick.position);
+            let layout = self.window.create_pango_layout(Some(&tick.label[..])).unwrap();
 
             // Vertically align the label text to the tick.
             // Based on http://gtk.10911.n7.nabble.com/Pango-Accessing-x-height-mean-line-in-Pango-layout-td79374.html.
@@ -370,6 +384,11 @@ impl View {
             }
             ViewEvent::SetView(bitmap) => {
                 self.pixbuf = Some(bitmap.into_pixbuf());
+                self.image.queue_draw();
+            }
+            ViewEvent::SetTicks(x_ticks, y_ticks) => {
+                self.x_ticks = x_ticks;
+                self.y_ticks = y_ticks;
                 self.image.queue_draw();
             }
         }
@@ -523,6 +542,8 @@ impl Model {
     fn recompute_ticks(&self) {
         let (_width, height) = self.target_size;
         let num_major_ticks_y = 10;
+        let x_ticks = Vec::new();
+        let mut y_ticks = Vec::new();
 
         // The minimal period that the DFT picks up, above the constant factor,
         // is a single window.
@@ -535,14 +556,19 @@ impl Model {
         for i in 0..num_major_ticks_y {
             let t = (i as f64) / (num_major_ticks_y - 1) as f64;
             let value_hz = map_y_axis(t, hz_min, hz_max);
-            let ypos = (height - 1) as f64 * t;
             let label = match () {
                 () if value_hz > 10_000.0 => format!("{:.1} kHz", value_hz / 1000.0),
                 () if value_hz >   1000.0 => format!("{:.2} kHz", value_hz / 1000.0),
                 _                         => format!("{:.0} Hz",  value_hz),
             };
-            println!("{:.0} / {}: {}", ypos, height, label);
+            let tick = Tick {
+                position: t,
+                label: label,
+            };
+            y_ticks.push(tick);
         }
+
+        self.sender.send(ViewEvent::SetTicks(x_ticks, y_ticks)).unwrap();
     }
 
     /// Paint a new bitmap and send it over to the UI thread.
