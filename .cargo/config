@@ -1,0 +1,3 @@
+[build]
+# Disable parallel codegen, because it affects Claxon performance very badly.
+rustflags = ["-C", "codegen-units=1"]
