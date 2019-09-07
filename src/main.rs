@@ -35,6 +35,12 @@ const SPECTRUM_LEN: usize = WINDOW_LEN / 2;
 /// This is smaller than `WINDOW_LEN`, which means that windows overlap.
 const WINDOW_OFF: usize = 4096;
 
+/// The length of a tick on the axis, in display pixels.
+const TICK_SIZE: f64 = 5.0;
+
+/// The space between a label and a tick, in display pixels.
+const TICK_PADDING: f64 = 5.0;
+
 /// Given t in [0, 1], return an RGB value in [0, 1]^3.
 pub fn colormap_magma(t: f32) -> (f32, f32, f32) {
     // Based on https://www.shadertoy.com/view/WlfXRN (licensed CC0), which in
@@ -309,8 +315,11 @@ impl View {
     ///
     /// This excludes the space for labels and a border. Units are display pixels.
     fn get_graph_size(&self, width: i32, height: i32) -> (i32, i32) {
-        // TODO: Subtract space for padding too, and for a border.
-        (width - self.label_width, height - self.label_height)
+        // Subtract space for the label, ticks, and a 1px border.
+        (
+            1.max(width - 2 - self.label_width - (TICK_SIZE + TICK_PADDING) as i32),
+            1.max(height - 2 - self.label_height - (TICK_SIZE + TICK_PADDING) as i32),
+        )
     }
 
     fn on_drag_data_received(&self, data: &gtk::SelectionData) {
@@ -348,7 +357,13 @@ impl View {
             let scale_x = graph_width as f64 / pixbuf.get_width() as f64;
             let scale_y = graph_height as f64 / pixbuf.get_height() as f64;
             ctx.scale(scale_x, scale_y);
-            ctx.set_source_pixbuf(pixbuf, self.label_width as f64 / scale_x, 0.0);
+            ctx.set_source_pixbuf(
+                pixbuf,
+                // To the left we have the label and ticks, and a 1px border. At
+                // the top we only have the 1px border.
+                (self.label_width as f64 + TICK_SIZE + TICK_PADDING + 1.0) / scale_x,
+                1.0 / scale_y
+            );
             ctx.paint();
 
             // Undo the scale, so we can draw in display pixels again later.
@@ -357,35 +372,33 @@ impl View {
 
         // Draw a frame around the spectrum view.
         ctx.rectangle(
-            self.label_width as f64 + 0.5,
+            self.label_width as f64 + TICK_SIZE + TICK_PADDING + 0.5,
             0.5,
-            (graph_width - 1) as f64,
-            (graph_height - 1) as f64,
+            (graph_width + 1) as f64,
+            (graph_height + 1) as f64,
         );
-
-        let tick_size = 5.0;
 
         // TODO: Point ticks outside rather than inside.
         for tick in &self.y_ticks {
-            let x = 0.0;
+            let x = self.label_width as f64 + TICK_PADDING;
             let y = graph_height as f64 * (1.0 - tick.position);
             ctx.move_to(x, y);
-            ctx.line_to(x + tick_size, y);
+            ctx.line_to(x + TICK_SIZE, y);
 
-            let x = actual_size.width as f64;
+            let x = actual_size.width as f64 - 1.0;
             ctx.move_to(x, y);
-            ctx.line_to(x - tick_size, y);
+            ctx.line_to(x - TICK_SIZE, y);
         }
 
         for tick in &self.x_ticks {
             let y = 0.0;
             let x = self.label_width as f64 + graph_width as f64 * tick.position;
             ctx.move_to(x, y);
-            ctx.line_to(x, y + tick_size);
+            ctx.line_to(x, y + TICK_SIZE);
 
             let y = graph_height as f64;
             ctx.move_to(x, y);
-            ctx.line_to(x, y - tick_size);
+            ctx.line_to(x, y - TICK_SIZE);
         }
 
         ctx.set_line_width(1.0);
@@ -393,9 +406,12 @@ impl View {
         ctx.stroke();
 
         for tick in &self.y_ticks {
-            let x = 0.0;
-            let y = graph_height as f64 * (1.0 - tick.position);
             let layout = self.window.create_pango_layout(Some(&tick.label[..])).unwrap();
+
+            // Align the label right, next to the tick.
+            let (width, height) = layout.get_pixel_size();
+            let x = self.label_width as f64 - width as f64;
+            let y = graph_height as f64 * (1.0 - tick.position);
 
             // Vertically align the label text to the tick.
             // Based on http://gtk.10911.n7.nabble.com/Pango-Accessing-x-height-mean-line-in-Pango-layout-td79374.html.
@@ -411,7 +427,7 @@ impl View {
             // https://developer.gnome.org/pango/stable/pango-Glyph-Storage.html#PANGO-PIXELS:CAPS
             let x_center_pixels = (x_center_font_units + 512) >> 10;
 
-            ctx.move_to(x + tick_size * 2.0, y - x_center_pixels as f64);
+            ctx.move_to(x, y - x_center_pixels as f64);
             pangocairo::functions::show_layout(ctx, &layout);
         }
     }
