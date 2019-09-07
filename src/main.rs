@@ -152,12 +152,31 @@ struct Tick {
 /// a refcounted cell. This allows events to mutate the view state, e.g. in
 /// order to swap out the pixbuf.
 struct View {
+    /// Application window widget.
     window: gtk::ApplicationWindow,
+
+    /// Application header bar widget (replacing the normal window header).
     header_bar: gtk::HeaderBar,
+
+    /// Drawing area widget that draws the spectrogram and axes.
     image: gtk::DrawingArea,
+
+    /// Tick positions and labels for the x-axis.
     x_ticks: Vec<Tick>,
+
+    /// Tick positions and labels for the y-axis.
     y_ticks: Vec<Tick>,
+
+    /// Maximum width of y-tick labels in display pixels.
+    label_width: i32,
+
+    /// Maximum height of x-tick labels in display pixels.
+    label_height: i32,
+
+    /// The pixbuf with the rendered specrogram.
     pixbuf: Option<gdk_pixbuf::Pixbuf>,
+
+    /// Sender to send events to the model.
     sender: mpsc::SyncSender<ModelEvent>,
 }
 
@@ -244,6 +263,11 @@ impl View {
             gdk::DragAction::COPY,
         );
 
+        // Create a Pango layout for an axis label, with the right UI font. We
+        // use this layout to measure the size of a label, to reserve the right
+        // amount of space for labels.
+        let label_layout = window.create_pango_layout(Some("00.0 kHz")).unwrap();
+        let (label_width, label_height) = label_layout.get_pixel_size();
 
         let view_cell = Rc::new(RefCell::new(
             View {
@@ -252,6 +276,8 @@ impl View {
                 image: image.clone(),
                 x_ticks: Vec::new(),
                 y_ticks: Vec::new(),
+                label_width: label_width,
+                label_height: label_height,
                 pixbuf: None,
                 sender: sender,
             }
@@ -279,6 +305,14 @@ impl View {
         view_cell
     }
 
+    /// Given the size of the widget, compute the size of the spectrogram graph.
+    ///
+    /// This excludes the space for labels and a border. Units are display pixels.
+    fn get_graph_size(&self, width: i32, height: i32) -> (i32, i32) {
+        // TODO: Subtract space for padding too, and for a border.
+        (width - self.label_width, height - self.label_height)
+    }
+
     fn on_drag_data_received(&self, data: &gtk::SelectionData) {
         // We registered only this target, so we should only be signalled for
         // this target.
@@ -292,13 +326,15 @@ impl View {
     }
 
     fn on_size_allocate(&self, rect: &gtk::Rectangle) {
+        let (width, height) = self.get_graph_size(rect.width, rect.height);
         let f = self.image.get_scale_factor();
-        self.sender.send(ModelEvent::Resize(rect.width * f, rect.height * f)).unwrap();
+        self.sender.send(ModelEvent::Resize(width * f, height * f)).unwrap();
     }
 
     fn on_draw(&self, ctx: &cairo::Context) {
         let actual_size = self.image.get_allocation();
         let transform = ctx.get_matrix();
+        let (graph_width, graph_height) = self.get_graph_size(actual_size.width, actual_size.height);
 
         if let Some(pixbuf) = self.pixbuf.as_ref() {
             // Stretch the bitmap to fill the entire widget. This has two
@@ -309,10 +345,10 @@ impl View {
             // bitmap is still being rendered, we can stretch the old one to
             // hide the fact that the new one is not ready, instead of having a
             // gap, or having the image be truncated.
-            let scale_x = actual_size.width as f64 / pixbuf.get_width() as f64;
-            let scale_y = actual_size.height as f64 / pixbuf.get_height() as f64;
+            let scale_x = graph_width as f64 / pixbuf.get_width() as f64;
+            let scale_y = graph_height as f64 / pixbuf.get_height() as f64;
             ctx.scale(scale_x, scale_y);
-            ctx.set_source_pixbuf(pixbuf, 0.0, 0.0);
+            ctx.set_source_pixbuf(pixbuf, self.label_width as f64 / scale_x, 0.0);
             ctx.paint();
 
             // Undo the scale, so we can draw in display pixels again later.
@@ -320,14 +356,19 @@ impl View {
         }
 
         // Draw a frame around the spectrum view.
-        ctx.rectangle(0.5, 0.5, (actual_size.width - 1) as f64, (actual_size.height - 1) as f64);
+        ctx.rectangle(
+            self.label_width as f64 + 0.5,
+            0.5,
+            (graph_width - 1) as f64,
+            (graph_height - 1) as f64,
+        );
 
         let tick_size = 5.0;
 
         // TODO: Point ticks outside rather than inside.
         for tick in &self.y_ticks {
             let x = 0.0;
-            let y = actual_size.height as f64 * (1.0 - tick.position);
+            let y = graph_height as f64 * (1.0 - tick.position);
             ctx.move_to(x, y);
             ctx.line_to(x + tick_size, y);
 
@@ -338,11 +379,11 @@ impl View {
 
         for tick in &self.x_ticks {
             let y = 0.0;
-            let x = actual_size.width as f64 * tick.position;
+            let x = self.label_width as f64 + graph_width as f64 * tick.position;
             ctx.move_to(x, y);
             ctx.line_to(x, y + tick_size);
 
-            let y = actual_size.height as f64;
+            let y = graph_height as f64;
             ctx.move_to(x, y);
             ctx.line_to(x, y - tick_size);
         }
@@ -353,7 +394,7 @@ impl View {
 
         for tick in &self.y_ticks {
             let x = 0.0;
-            let y = actual_size.height as f64 * (1.0 - tick.position);
+            let y = graph_height as f64 * (1.0 - tick.position);
             let layout = self.window.create_pango_layout(Some(&tick.label[..])).unwrap();
 
             // Vertically align the label text to the tick.
