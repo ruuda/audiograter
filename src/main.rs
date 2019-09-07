@@ -41,6 +41,9 @@ const TICK_SIZE: f64 = 5.0;
 /// The space between a label and a tick, in display pixels.
 const TICK_PADDING: f64 = 5.0;
 
+/// The width of the border around the graph.
+const BORDER_WIDTH: f64 = 1.0;
+
 /// Given t in [0, 1], return an RGB value in [0, 1]^3.
 pub fn colormap_magma(t: f32) -> (f32, f32, f32) {
     // Based on https://www.shadertoy.com/view/WlfXRN (licensed CC0), which in
@@ -199,6 +202,9 @@ struct Model {
     /// The target size of the spectogram bitmap, in device pixels.
     target_size: (i32, i32),
 
+    /// The size of axis labels, in device pixels.
+    label_size: (i32, i32),
+
     /// The duration of the loaded file, in samples.
     duration: Option<u64>,
 
@@ -221,7 +227,8 @@ struct Model {
 
 enum ModelEvent {
     OpenFile(PathBuf),
-    Resize(i32, i32),
+    /// Width, height, tick label width, tick label height (in device pixels).
+    Resize(i32, i32, i32, i32),
     Decode,
 }
 
@@ -317,8 +324,8 @@ impl View {
     fn get_graph_size(&self, width: i32, height: i32) -> (i32, i32) {
         // Subtract space for the label, ticks, and a 1px border.
         (
-            1.max(width - 2 - self.label_width - (TICK_SIZE + TICK_PADDING) as i32),
-            1.max(height - 2 - self.label_height - (TICK_SIZE + TICK_PADDING) as i32),
+            1.max(width - self.label_width - (2.0 * BORDER_WIDTH + TICK_SIZE + TICK_PADDING) as i32),
+            1.max(height - self.label_height - (2.0 * BORDER_WIDTH + TICK_SIZE + TICK_PADDING) as i32),
         )
     }
 
@@ -337,7 +344,13 @@ impl View {
     fn on_size_allocate(&self, rect: &gtk::Rectangle) {
         let (width, height) = self.get_graph_size(rect.width, rect.height);
         let f = self.image.get_scale_factor();
-        self.sender.send(ModelEvent::Resize(width * f, height * f)).unwrap();
+        let event = ModelEvent::Resize(
+            width * f,
+            height * f,
+            self.label_width * f,
+            self.label_height * f,
+        );
+        self.sender.send(event).unwrap();
     }
 
     fn on_draw(&self, ctx: &cairo::Context) {
@@ -372,20 +385,20 @@ impl View {
 
         // Draw a frame around the spectrum view.
         ctx.rectangle(
-            self.label_width as f64 + TICK_SIZE + TICK_PADDING + 0.5,
-            0.5,
-            (graph_width + 1) as f64,
-            (graph_height + 1) as f64,
+            self.label_width as f64 + TICK_SIZE + TICK_PADDING + BORDER_WIDTH * 0.5,
+            BORDER_WIDTH * 0.5,
+            graph_width as f64 + BORDER_WIDTH,
+            graph_height as f64 + BORDER_WIDTH,
         );
 
         // TODO: Point ticks outside rather than inside.
         for tick in &self.y_ticks {
             let x = self.label_width as f64 + TICK_PADDING;
-            let y = graph_height as f64 * (1.0 - tick.position);
+            let y = BORDER_WIDTH + graph_height as f64 * (1.0 - tick.position);
             ctx.move_to(x, y);
             ctx.line_to(x + TICK_SIZE, y);
 
-            let x = actual_size.width as f64 - 1.0;
+            let x = actual_size.width as f64 - BORDER_WIDTH;
             ctx.move_to(x, y);
             ctx.line_to(x - TICK_SIZE, y);
         }
@@ -401,7 +414,7 @@ impl View {
             ctx.line_to(x, y - TICK_SIZE);
         }
 
-        ctx.set_line_width(1.0);
+        ctx.set_line_width(BORDER_WIDTH);
         ctx.set_source_rgba(1.0, 1.0, 1.0, 0.8);
         ctx.stroke();
 
@@ -411,7 +424,7 @@ impl View {
             // Align the label right, next to the tick.
             let (width, height) = layout.get_pixel_size();
             let x = self.label_width as f64 - width as f64;
-            let y = graph_height as f64 * (1.0 - tick.position);
+            let y = BORDER_WIDTH + graph_height as f64 * (1.0 - tick.position);
 
             // Vertically align the label text to the tick.
             // Based on http://gtk.10911.n7.nabble.com/Pango-Accessing-x-height-mean-line-in-Pango-layout-td79374.html.
@@ -459,6 +472,7 @@ impl Model {
             spectrum: Vec::new(),
             samples: Vec::new(),
             target_size: (0, 0),
+            label_size: (0, 0),
             duration: None,
             sample_rate: 1,
             sender: sender,
@@ -529,8 +543,9 @@ impl Model {
                 // to be.
                 self.recompute_ticks();
             }
-            ModelEvent::Resize(width, height) => {
+            ModelEvent::Resize(width, height, label_width, label_height) => {
                 self.target_size = (width, height);
+                self.label_size = (label_width, label_height);
                 self.recompute_ticks();
                 self.repaint();
             }
@@ -598,7 +613,8 @@ impl Model {
 
     fn recompute_ticks(&self) {
         let (_width, height) = self.target_size;
-        let num_major_ticks_y = 10;
+        let (_label_width, label_height) = self.label_size;
+        let num_major_ticks_y = height / (label_height * 3 - 2);
         let x_ticks = Vec::new();
         let mut y_ticks = Vec::new();
 
@@ -610,8 +626,14 @@ impl Model {
         // As there is one bucket per sample, that is half of the sample rate.
         let hz_max = self.sample_rate as f64 / 2.0;
 
+        // We don't want to place a tick all the way at the top, because the top
+        // half of the label would be cut off. For symmetry, and to get out of
+        // the way of x-axis labels, also move up the bottom tick.
+        let max_t = (height - label_height / 2) as f64 / height as f64;
+        let min_t = (label_height / 2) as f64 / height as f64;
+
         for i in 0..num_major_ticks_y {
-            let t = (i as f64) / (num_major_ticks_y - 1) as f64;
+            let t = min_t + (max_t - min_t) * (i as f64) / (num_major_ticks_y - 1) as f64;
             let value_hz = map_y_axis(t, hz_min, hz_max);
             let label = match () {
                 () if value_hz > 10_000.0 => format!("{:.1} kHz", value_hz / 1000.0),
