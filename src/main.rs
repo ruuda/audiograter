@@ -706,9 +706,14 @@ impl Model {
 
                 assert_eq!(spectrum_i.len(), SPECTRUM_LEN);
                 let yf = 1.0 - y as f64 / (height - 1) as f64;
-                let jf = map_y_axis(yf, 1.0, (SPECTRUM_LEN - 1) as f64);
+                let jf = map_y_axis(yf, 1.0, (SPECTRUM_LEN - 1) as f64) as f32;
+
+                // Interpolate between the two closest frequencies.
+                // TODO: What if there are multiple buckets in a pixel?
                 let j = jf.trunc() as usize;
-                let sample = spectrum_i[j.min(SPECTRUM_LEN - 1)] / SPECTRUM_LEN as f32;
+                let s0 = spectrum_i[j.min(SPECTRUM_LEN - 1)] / SPECTRUM_LEN as f32;
+                let s1 = spectrum_i[(j + 1).min(SPECTRUM_LEN - 1)] / SPECTRUM_LEN as f32;
+                let sample = jf.fract() * s1 + (1.0 - jf.fract()) * s0;
 
                 value = sample.mul_add(weight, value);
                 total_weight += weight;
