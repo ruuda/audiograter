@@ -659,14 +659,51 @@ impl Model {
     fn repaint(&self) {
         let (width, height) = self.target_size;
         assert!(width > 0);
-        let bitmap = Bitmap::generate(width, height, |x, y| {
-            if self.spectrum.len() == 0 { return 0.0 }
-            let i_min = x as usize * self.spectrum.len() / width as usize;
-            let i_max = (x + 1) as usize * self.spectrum.len() / width as usize;
-            let mut value = 0.0;
-            let mut n = 0.0;
 
-            for i in i_min..i_max.max(i_min + 1) {
+        let bitmap = Bitmap::generate(width, height, |x, y| {
+            // Paint a black square when we don't have any data yet.
+            let duration = match (self.spectrum.len(), self.duration) {
+                (0, _) => return 0.0,
+                (_, None) => return 0.0,
+                (_, Some(n)) => n,
+            };
+
+            // Determine the time (in units of samples) at the left edge of the
+            // current pixel and at the right edge of the current pixel.
+            let t_min = x as i64 * duration as i64 / width as i64;
+            let t_max = (x + 1) as i64 * duration as i64 / width as i64;
+
+            // Determine the bins that intersect the current pixel.
+            let bin_min = 1 + (t_min - WINDOW_LEN as i64) / WINDOW_OFF as i64;
+            let bin_max = t_max / WINDOW_OFF as i64;
+
+            // Clamp to be in bounds.
+            let i_min = bin_min.max(0).min(self.spectrum.len() as i64 - 1) as usize;
+            let i_max = bin_max.max(0).min(self.spectrum.len() as i64 - 1) as usize;
+
+            let mut value = 0.0;
+
+            // We sample every window that intersects the pixel, and we weigh by
+            // the length of the intersection, relative to the width of the
+            // pixel. But because `WINDOW_OFF < WINDOW_LEN`, that results in
+            // more than 100% coverage, so we compensate for that too.
+            let inv_pixel_width = ((t_max - t_min) as f32).recip();
+            let inv_coverage = (WINDOW_OFF as f32 / WINDOW_LEN as f32);
+            let denom = inv_pixel_width * inv_coverage;
+
+            // Sample every bin that intersects the pixel, and weigh by the
+            // length of the intersection.
+            for i in i_min..=i_max {
+                let window_t_min = i as i64 * WINDOW_OFF as i64;
+                let window_t_max = i as i64 * WINDOW_OFF as i64 + WINDOW_LEN as i64;
+                let overlap_min = t_min.max(window_t_min);
+                let overlap_max = t_max.min(window_t_max);
+                let width = (overlap_max - overlap_min) as f32;
+
+                if y == 0 {
+                    println!("x={} t_min={} t_max={} i={} wt_min={} wt_max={} overlap={}", x, t_min, t_max, i, window_t_min, window_t_max, overlap_max - overlap_min);
+                }
+
                 let spectrum_i = &self.spectrum[i];
 
                 assert_eq!(spectrum_i.len(), SPECTRUM_LEN);
@@ -675,11 +712,9 @@ impl Model {
                 let j = jf.trunc() as usize;
                 let sample = spectrum_i[j.min(SPECTRUM_LEN - 1)] / SPECTRUM_LEN as f32;
 
-                value += sample;
-                n += 1.0;
+                value += sample * width * denom;
             }
 
-            value = value / n;
             (0.5 + value.ln() * 0.05).min(1.0).max(0.0)
         });
         self.sender.send(ViewEvent::SetView(bitmap)).unwrap();
