@@ -22,5 +22,5 @@ Drag a flac file onto the window.
 Audiograter is free software. It is licensed under the
 [GNU General Public License][gplv3], version 3.
 
-[spek]:  https://spek.cc
+[spek]:  http://spek.cc
 [gplv3]: https://www.gnu.org/licenses/gpl-3.0.html
