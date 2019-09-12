@@ -592,13 +592,18 @@ impl Model {
             buffer = block.into_buffer();
         }
 
+        if have_more {
+            // Continue decoding after this event.
+            self.self_sender.send(ModelEvent::Decode).unwrap();
+        } else {
+            // Otherwise, pad with silence so we can finish the last window.
+            while self.samples.len() < WINDOW_LEN + WINDOW_OFF {
+                self.samples.push(0.0);
+            }
+        }
+
         self.compute_spectrum();
         self.repaint();
-
-        // Continue decoding.
-        if have_more {
-            self.self_sender.send(ModelEvent::Decode).unwrap();
-        }
     }
 
     fn compute_spectrum(&mut self) {
