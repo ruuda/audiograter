@@ -405,13 +405,13 @@ impl View {
 
         for tick in &self.x_ticks {
             let y = 0.0;
-            let x = self.label_width as f64 + graph_width as f64 * tick.position;
+            let x = self.label_width as f64 + TICK_PADDING + TICK_SIZE + BORDER_WIDTH * 0.5 + graph_width as f64 * tick.position;
             ctx.move_to(x, y);
             ctx.line_to(x, y + TICK_SIZE);
 
-            let y = graph_height as f64;
+            let y = graph_height as f64 + BORDER_WIDTH;
             ctx.move_to(x, y);
-            ctx.line_to(x, y - TICK_SIZE);
+            ctx.line_to(x, y + TICK_SIZE);
         }
 
         ctx.set_line_width(BORDER_WIDTH);
