@@ -391,7 +391,6 @@ impl View {
             graph_height as f64 + BORDER_WIDTH,
         );
 
-        // TODO: Point ticks outside rather than inside.
         for tick in &self.y_ticks {
             let x = self.label_width as f64 + TICK_PADDING;
             let y = BORDER_WIDTH + graph_height as f64 * (1.0 - tick.position);
@@ -441,6 +440,19 @@ impl View {
             let x_center_pixels = (x_center_font_units + 512) >> 10;
 
             ctx.move_to(x, y - x_center_pixels as f64);
+            pangocairo::functions::show_layout(ctx, &layout);
+        }
+
+        // TODO: Fill a vec with these and walk the ticks only once.
+        for tick in &self.x_ticks {
+            let layout = self.window.create_pango_layout(Some(&tick.label[..])).unwrap();
+
+            // Center the label.
+            let (width, height) = layout.get_pixel_size();
+            let x = self.label_width as f64 + TICK_PADDING + TICK_SIZE + BORDER_WIDTH * 0.5 + graph_width as f64 * tick.position - width as f64 * 0.5;
+            let y = graph_height as f64 + BORDER_WIDTH + TICK_PADDING + TICK_SIZE;
+
+            ctx.move_to(x, y);
             pangocairo::functions::show_layout(ctx, &layout);
         }
     }
@@ -652,7 +664,6 @@ impl Model {
             601 ... 900 => 900,
             _          => 1200,
         };
-        println!("ticks: {}, secs: {}, quant: {}", num_major_ticks_x, x_tick_duration_seconds, quant_x_tick_secs);
 
         let inv_duration = (duration as f64).recip();
         let mut t_sec = 0_u64;
@@ -661,7 +672,7 @@ impl Model {
             let sec = t_sec % 60;
             let tick = Tick {
                 position: (t_sec * self.sample_rate as u64) as f64 * inv_duration,
-                label: format!("{:}:{:00}", min, sec),
+                label: format!("{:}:{:02}", min, sec),
             };
             x_ticks.push(tick);
 
