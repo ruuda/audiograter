@@ -646,7 +646,7 @@ impl Model {
         // Make a rough estimate of how many ticks we can fit first. From that,
         // compute a possible tick duration as a nice round number, and then
         // fill the time with those ticks.
-        let x_tick_duration_samples = duration / (num_major_ticks_x - 1) as u64;
+        let x_tick_duration_samples = duration / (num_major_ticks_x.max(2) - 1) as u64;
         let x_tick_duration_seconds = x_tick_duration_samples / self.sample_rate as u64;
 
         // Space tick labels times apart that format to "round" numbers as mm:ss.
@@ -665,6 +665,11 @@ impl Model {
             _          => 1200,
         };
 
+        // Avoid placing labels at the end, because they will be cut off. For
+        // that, we need to know how much time (in axis coordinates) a the label
+        // consumes.
+        let label_duration = label_width as u64 * duration as u64 / (width as u64 * 2);
+
         let inv_duration = (duration as f64).recip();
         let mut t_sec = 0_u64;
         loop {
@@ -678,7 +683,7 @@ impl Model {
 
             t_sec += quant_x_tick_secs;
 
-            if t_sec * self.sample_rate as u64 > duration {
+            if t_sec * self.sample_rate as u64 + label_duration > duration {
                 break
             }
         }
