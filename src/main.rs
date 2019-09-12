@@ -681,15 +681,14 @@ impl Model {
             let i_min = bin_min.max(0).min(self.spectrum.len() as i64 - 1) as usize;
             let i_max = bin_max.max(0).min(self.spectrum.len() as i64 - 1) as usize;
 
-            let mut value = 0.0;
-
             // We sample every window that intersects the pixel, and we weigh by
-            // the length of the intersection, relative to the width of the
-            // pixel. But because `WINDOW_OFF < WINDOW_LEN`, that results in
-            // more than 100% coverage, so we compensate for that too.
-            let inv_pixel_width = ((t_max - t_min) as f32).recip();
-            let inv_coverage = (WINDOW_OFF as f32 / WINDOW_LEN as f32);
-            let denom = inv_pixel_width * inv_coverage;
+            // the integral of the Hann window over the intersection. We
+            // normalize contributions of multiple windows.
+            let inv_window_len = (WINDOW_LEN as f32).recip();
+
+            // Start with a small nonzero weight to avoid division by zero.
+            let mut value = 0.0;
+            let mut total_weight = 0.0001;
 
             // Sample every bin that intersects the pixel, and weigh by the
             // length of the intersection.
@@ -697,12 +696,11 @@ impl Model {
                 let window_t_min = i as i64 * WINDOW_OFF as i64;
                 let window_t_max = i as i64 * WINDOW_OFF as i64 + WINDOW_LEN as i64;
                 let overlap_min = t_min.max(window_t_min);
-                let overlap_max = t_max.min(window_t_max);
-                let width = (overlap_max - overlap_min) as f32;
-
-                if y == 0 {
-                    println!("x={} t_min={} t_max={} i={} wt_min={} wt_max={} overlap={}", x, t_min, t_max, i, window_t_min, window_t_max, overlap_max - overlap_min);
-                }
+                let overlap_max = t_max.min(window_t_max).max(overlap_min);
+                let weight = dft::hann_int(
+                    (overlap_min - window_t_min) as f32 * inv_window_len,
+                    (overlap_max - window_t_min) as f32 * inv_window_len,
+                );
 
                 let spectrum_i = &self.spectrum[i];
 
@@ -712,8 +710,11 @@ impl Model {
                 let j = jf.trunc() as usize;
                 let sample = spectrum_i[j.min(SPECTRUM_LEN - 1)] / SPECTRUM_LEN as f32;
 
-                value += sample * width * denom;
+                value = sample.mul_add(weight, value);
+                total_weight += weight;
             }
+
+            value = value / total_weight;
 
             (0.5 + value.ln() * 0.05).min(1.0).max(0.0)
         });

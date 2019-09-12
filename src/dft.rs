@@ -125,6 +125,18 @@ pub fn hann(len: usize, i: usize) -> f32 {
     2.0 * (factor_sqrt * factor_sqrt)
 }
 
+/// Integrate the Hann window from `t0` to `t1`.
+///
+/// This assumes that the domain of the Hann window is [0, 1],
+/// such that `hann_int(0.0, 1.0)` would return 1.0 if the result was not
+/// scaled. However, we scale the result by some constant as we normalize
+/// later anyway.
+pub fn hann_int(t0: f32, t1: f32) -> f32 {
+    let t0_2pi = (2.0 * std::f32::consts::PI) * t0;
+    let t1_2pi = (2.0 * std::f32::consts::PI) * t1;
+    t1_2pi - t0_2pi + t0_2pi.sin() - t1_2pi.sin()
+}
+
 pub fn dft_fast(xs: &[f32], window: impl Fn(usize, usize) -> f32) -> Box<[f32]> {
     let half_len = xs.len() / 2;
     assert_eq!(half_len * 2, xs.len(), "Length must be even.");
