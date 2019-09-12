@@ -617,11 +617,60 @@ impl Model {
     }
 
     fn recompute_ticks(&self) {
-        let (_width, height) = self.target_size;
-        let (_label_width, label_height) = self.label_size;
+        let duration = match self.duration {
+            None => return,
+            Some(n) => n,
+        };
+
+        let (width, height) = self.target_size;
+        let (label_width, label_height) = self.label_size;
+
+        let num_major_ticks_x = width / label_width;
         let num_major_ticks_y = height / (label_height * 3 - 2);
-        let x_ticks = Vec::new();
+
+        let mut x_ticks = Vec::new();
         let mut y_ticks = Vec::new();
+
+        // Make a rough estimate of how many ticks we can fit first. From that,
+        // compute a possible tick duration as a nice round number, and then
+        // fill the time with those ticks.
+        let x_tick_duration_samples = duration / (num_major_ticks_x - 1) as u64;
+        let x_tick_duration_seconds = x_tick_duration_samples / self.sample_rate as u64;
+
+        // Space tick labels times apart that format to "round" numbers as mm:ss.
+        let quant_x_tick_secs = match x_tick_duration_seconds {
+              0         =>   1,
+              1 ...   5 =>   5,
+              6 ...  10 =>  10,
+             11 ...  15 =>  15,
+             16 ...  30 =>  30,
+             31 ...  60 =>  60,
+             61 ...  90 =>  90,
+             91 ... 120 => 120,
+            121 ... 300 => 300,
+            301 ... 600 => 600,
+            601 ... 900 => 900,
+            _          => 1200,
+        };
+        println!("ticks: {}, secs: {}, quant: {}", num_major_ticks_x, x_tick_duration_seconds, quant_x_tick_secs);
+
+        let inv_duration = (duration as f64).recip();
+        let mut t_sec = 0_u64;
+        loop {
+            let min = t_sec / 60;
+            let sec = t_sec % 60;
+            let tick = Tick {
+                position: (t_sec * self.sample_rate as u64) as f64 * inv_duration,
+                label: format!("{:}:{:00}", min, sec),
+            };
+            x_ticks.push(tick);
+
+            t_sec += quant_x_tick_secs;
+
+            if t_sec * self.sample_rate as u64 > duration {
+                break
+            }
+        }
 
         // The minimal period that the DFT picks up, above the constant factor,
         // is a single window.
