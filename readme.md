@@ -1,4 +1,5 @@
-# Audiograter
+Audiograter
+===========
 
 A GTK-based spectrogram viewer.
 
@@ -8,16 +9,19 @@ Audiograter is a basic application that visualizes the frequency spectrum
 of flac files. It is similar to [Spek][spek], but less fully featured and
 not portable. Audiograter fully supports HiDPI.
 
-## Usage
+Usage
+-----
 
 Drag a flac file onto the window.
 
-## Building
+Building
+--------
 
     cargo build --release
     target/release/audiograter
 
-## License
+License
+-------
 
 Audiograter is free software. It is licensed under the
 [GNU General Public License][gplv3], version 3.

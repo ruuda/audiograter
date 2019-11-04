@@ -1,6 +1,8 @@
-# Changelog
+Changelog
+=========
 
-## 1.0
+1.0
+---
 
 Released 2019-11-04.
 
