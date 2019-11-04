@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "audiograter"
-version = "0.0.0"
+version = "1.0.0"
 dependencies = [
  "cairo-rs 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "claxon 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
