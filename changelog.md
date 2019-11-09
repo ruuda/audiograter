@@ -1,6 +1,13 @@
 Changelog
 =========
 
+master
+------
+
+Not yet released.
+
+* Add an icon and `.desktop` file.
+
 1.0
 ---
 
