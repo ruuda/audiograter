@@ -15,6 +15,7 @@ sha256sums=('SKIP')
 build() {
   cd "$srcdir/$pkgname"
   cargo build --release
+  strip target/release/audiograter
 }
 
 check() {
