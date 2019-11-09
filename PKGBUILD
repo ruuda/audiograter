@@ -26,6 +26,9 @@ check() {
 package() {
   mkdir -p "$pkgdir/usr/bin"
   mkdir -p "$pkgdir/usr/share/applications"
+  mkdir -p "$pkgdir/usr/share/icons/hicolor/scalable/apps"
+
   cp "$srcdir/$pkgname/target/release/audiograter" "$pkgdir/usr/bin/"
   cp "$srcdir/$pkgname/etc/audiograter.desktop"    "$pkgdir/usr/share/applications"
+  cp "$srcdir/$pkgname/etc/audiograter.svg"        "$pkgdir/usr/share/icons/hicolor/scalable/apps"
 }
