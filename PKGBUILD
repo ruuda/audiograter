@@ -24,5 +24,7 @@ check() {
 
 package() {
   mkdir -p "$pkgdir/usr/bin"
+  mkdir -p "$pkgdir/usr/share/applications"
   cp "$srcdir/$pkgname/target/release/audiograter" "$pkgdir/usr/bin/"
+  cp "$srcdir/$pkgname/etc/audiograter.desktop"    "$pkgdir/usr/share/applications"
 }
