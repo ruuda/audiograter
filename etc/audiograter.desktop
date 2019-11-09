@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Audiograter
+GenericName=Audio Spectrum Visualizer
+Keywords=Audio;Spectrum;Spectrogram
+Exec=audiograter
+Terminal=false
+Type=Application
+Icon=audiograter
+Categories=AudioVideo;Audio
+MimeType=audio/flac
