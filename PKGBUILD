@@ -1,6 +1,6 @@
 # Maintainer: Ruud van Asseldonk <dev@veniogames.com>
 pkgname=audiograter
-pkgver=1.0
+pkgver=1.1
 pkgrel=1
 pkgdesc="GTK-based spectrogram viewer"
 arch=('x86_64')
