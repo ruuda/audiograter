@@ -4,8 +4,10 @@
 
 Released 2023-09-19.
 
- * Update to latest version of Rust and Gtk crates.
  * Add an icon and `.desktop` file.
+ * Accept `text/uri-list` drops, which are needed to accept drops from recent
+   versions of Nautilus.
+ * Update to latest version of Rust and Gtk crates.
 
 ## 1.0
 

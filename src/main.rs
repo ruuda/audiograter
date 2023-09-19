@@ -252,6 +252,11 @@ impl View {
                 gtk::TargetFlags::OTHER_APP,
                 DRAG_EVENT_INFO,
             ),
+            gtk::TargetEntry::new(
+                "text/uri-list",
+                gtk::TargetFlags::OTHER_APP,
+                DRAG_EVENT_INFO,
+            ),
         ];
 
         window.drag_dest_set(
@@ -322,6 +327,14 @@ impl View {
             if let Ok((fname, _)) = glib::filename_from_uri(uri_stripped) {
                 self.sender.send(ModelEvent::OpenFile(fname)).unwrap();
             }
+            return;
+        }
+
+        for uri in data.uris() {
+            if let Ok((fname, _)) = glib::filename_from_uri(&uri) {
+                self.sender.send(ModelEvent::OpenFile(fname)).unwrap();
+            }
+            return;
         }
     }
 
