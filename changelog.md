@@ -1,15 +1,13 @@
-Changelog
-=========
+# Changelog
 
-master
-------
+## 1.1
 
-Not yet released.
+Released 2023-09-19.
 
-* Add an icon and `.desktop` file.
+ * Update to latest version of Rust and Gtk crates.
+ * Add an icon and `.desktop` file.
 
-1.0
----
+## 1.0
 
 Released 2019-11-04.
 
