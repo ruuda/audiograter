@@ -46,8 +46,12 @@ struct Complex {
 impl Complex {
     pub fn mul_add(self, factor: Complex, term: Complex) -> Complex {
         Complex {
-            real: self.real.mul_add(factor.real, (-self.imag).mul_add(factor.imag, term.real)),
-            imag: self.real.mul_add(factor.imag, self.imag.mul_add(factor.real, term.imag)),
+            real: self
+                .real
+                .mul_add(factor.real, (-self.imag).mul_add(factor.imag, term.real)),
+            imag: self
+                .real
+                .mul_add(factor.imag, self.imag.mul_add(factor.real, term.imag)),
         }
     }
 }
@@ -83,7 +87,9 @@ impl std::ops::Neg for Complex {
 }
 
 fn cooley_tukey(xs: &mut [Complex], tmp: &mut [Complex]) {
-    if xs.len() < 2 { return }
+    if xs.len() < 2 {
+        return;
+    }
 
     let half_len = xs.len() / 2;
     assert_eq!(half_len * 2, xs.len(), "Length must be even.");
@@ -112,7 +118,7 @@ fn cooley_tukey(xs: &mut [Complex], tmp: &mut [Complex]) {
         };
         let even = xs[i];
         let odd = xs[i + half_len];
-        xs[i]            = cexp.mul_add( odd, even);
+        xs[i] = cexp.mul_add(odd, even);
         xs[i + half_len] = cexp.mul_add(-odd, even);
     }
 }
@@ -151,7 +157,10 @@ pub fn dft_fast(xs: &[f32], window: impl Fn(usize, usize) -> f32) -> Box<[f32]> 
     let mut xs_complex: Vec<_> = xs
         .iter()
         .enumerate()
-        .map(|(i, &x)| Complex { real: x * window(len, i), imag: 0.0, })
+        .map(|(i, &x)| Complex {
+            real: x * window(len, i),
+            imag: 0.0,
+        })
         .collect();
 
     cooley_tukey(&mut xs_complex[..], &mut tmp[..]);
@@ -179,11 +188,10 @@ fn generate_test_signal() -> Box<[f32]> {
     let buffer: Vec<f32> = (0..4096)
         .map(|i| {
             let t = i as f32 / 4096.0;
-            0.0
-            + 1.0 * (t *   5.0 * two_pi).sin()
-            + 2.0 * (t *  31.0 * two_pi).cos()
-            + 5.0 * (t *  53.0 * two_pi).sin()
-            + 7.0 * (t * 541.0 * two_pi).sin()
+            0.0 + 1.0 * (t * 5.0 * two_pi).sin()
+                + 2.0 * (t * 31.0 * two_pi).cos()
+                + 5.0 * (t * 53.0 * two_pi).sin()
+                + 7.0 * (t * 541.0 * two_pi).sin()
         })
         .collect();
 
@@ -224,6 +232,12 @@ fn dft_fast_equals_dft_naive() {
 
     for (i, (&naive, &fast)) in result_naive.iter().zip(result_fast.iter()).enumerate() {
         let diff = (naive.sqrt() - fast.sqrt()).abs() / (buffer.len() as f32);
-        assert!(diff < 2e-4, "Difference at index {}: {} vs {}.", i, naive, fast);
+        assert!(
+            diff < 2e-4,
+            "Difference at index {}: {} vs {}.",
+            i,
+            naive,
+            fast
+        );
     }
 }

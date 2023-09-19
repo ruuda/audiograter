@@ -7,14 +7,14 @@
 
 mod dft;
 
-use std::path::{PathBuf};
-use std::ffi::OsStr;
-use std::sync::mpsc;
-use std::thread;
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::ffi::OsStr;
 use std::fs;
 use std::i32;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::mpsc;
+use std::thread;
 
 use gio::prelude::*;
 use gtk::prelude::*;
@@ -44,13 +44,17 @@ pub fn colormap_magma(t: f32) -> (f32, f32, f32) {
     // which is also licensed CC0.
 
     let c: [[f32; 3]; 7] = [
-        [ 18.65570506591883,    -11.48977351997711,     -5.601961508734096],
-        [-50.76852536473588,     29.04658282127291,      4.23415299384598],
-        [ 52.17613981234068,    -27.94360607168351,     12.94416944238394],
-        [-27.66873308576866,     14.26473078096533,    -13.64921318813922],
-        [  8.353717279216625,    -3.577719514958484,     0.3144679030132573],
-        [  0.2516605407371642,    0.6775232436837668,    2.494026599312351],
-        [ -0.002136485053939582, -0.000749655052795221, -0.005386127855323933],
+        [18.65570506591883, -11.48977351997711, -5.601961508734096],
+        [-50.76852536473588, 29.04658282127291, 4.23415299384598],
+        [52.17613981234068, -27.94360607168351, 12.94416944238394],
+        [-27.66873308576866, 14.26473078096533, -13.64921318813922],
+        [8.353717279216625, -3.577719514958484, 0.3144679030132573],
+        [0.2516605407371642, 0.6775232436837668, 2.494026599312351],
+        [
+            -0.002136485053939582,
+            -0.000749655052795221,
+            -0.005386127855323933,
+        ],
     ];
 
     let mut result = c[0];
@@ -247,11 +251,7 @@ impl View {
         // but the application cannot handle more than one file at a time anyway.
         const DRAG_EVENT_INFO: u32 = 0;
         let drag_targets = [
-            gtk::TargetEntry::new(
-                "text/plain",
-                gtk::TargetFlags::OTHER_APP,
-                DRAG_EVENT_INFO,
-            ),
+            gtk::TargetEntry::new("text/plain", gtk::TargetFlags::OTHER_APP, DRAG_EVENT_INFO),
             gtk::TargetEntry::new(
                 "text/uri-list",
                 gtk::TargetFlags::OTHER_APP,
@@ -271,25 +271,25 @@ impl View {
         let label_layout = window.create_pango_layout(Some("00.0 kHz"));
         let (label_width, label_height) = label_layout.pixel_size();
 
-        let view_cell = Rc::new(RefCell::new(
-            View {
-                window: window.clone(),
-                header_bar: header_bar.clone(),
-                image: image.clone(),
-                x_ticks: Vec::new(),
-                y_ticks: Vec::new(),
-                label_width: label_width,
-                label_height: label_height,
-                pixbuf: None,
-                sender: sender,
-            }
-        ));
+        let view_cell = Rc::new(RefCell::new(View {
+            window: window.clone(),
+            header_bar: header_bar.clone(),
+            image: image.clone(),
+            x_ticks: Vec::new(),
+            y_ticks: Vec::new(),
+            label_width: label_width,
+            label_height: label_height,
+            pixbuf: None,
+            sender: sender,
+        }));
 
         let view_cell_clone = view_cell.clone();
-        window.connect_drag_data_received(move |_self, _drag_context, _x, _y, data, info, _time| {
-            assert_eq!(info, DRAG_EVENT_INFO);
-            view_cell_clone.borrow_mut().on_drag_data_received(data);
-        });
+        window.connect_drag_data_received(
+            move |_self, _drag_context, _x, _y, data, info, _time| {
+                assert_eq!(info, DRAG_EVENT_INFO);
+                view_cell_clone.borrow_mut().on_drag_data_received(data);
+            },
+        );
 
         let view_cell_clone = view_cell.clone();
         image.connect_draw(move |_self, ctx| {
@@ -313,8 +313,12 @@ impl View {
     fn get_graph_size(&self, width: i32, height: i32) -> (i32, i32) {
         // Subtract space for the label, ticks, and a 1px border.
         (
-            1.max(width - self.label_width - (2.0 * BORDER_WIDTH + TICK_SIZE + TICK_PADDING) as i32),
-            1.max(height - self.label_height - (2.0 * BORDER_WIDTH + TICK_SIZE + TICK_PADDING) as i32),
+            1.max(
+                width - self.label_width - (2.0 * BORDER_WIDTH + TICK_SIZE + TICK_PADDING) as i32,
+            ),
+            1.max(
+                height - self.label_height - (2.0 * BORDER_WIDTH + TICK_SIZE + TICK_PADDING) as i32,
+            ),
         )
     }
 
@@ -353,10 +357,8 @@ impl View {
     fn on_draw(&self, ctx: &cairo::Context) {
         let actual_size = self.image.allocation();
         let transform = ctx.matrix();
-        let (graph_width, graph_height) = self.get_graph_size(
-            actual_size.width(),
-            actual_size.height(),
-        );
+        let (graph_width, graph_height) =
+            self.get_graph_size(actual_size.width(), actual_size.height());
 
         if let Some(pixbuf) = self.pixbuf.as_ref() {
             // Stretch the bitmap to fill the entire widget. This has two
@@ -375,7 +377,7 @@ impl View {
                 // To the left we have the label and ticks, and a 1px border. At
                 // the top we only have the 1px border.
                 (self.label_width as f64 + TICK_SIZE + TICK_PADDING + 1.0) / scale_x,
-                1.0 / scale_y
+                1.0 / scale_y,
             );
             ctx.paint().unwrap();
 
@@ -404,7 +406,11 @@ impl View {
 
         for tick in &self.x_ticks {
             let y = 0.0;
-            let x = self.label_width as f64 + TICK_PADDING + TICK_SIZE + BORDER_WIDTH * 0.5 + graph_width as f64 * tick.position;
+            let x = self.label_width as f64
+                + TICK_PADDING
+                + TICK_SIZE
+                + BORDER_WIDTH * 0.5
+                + graph_width as f64 * tick.position;
             ctx.move_to(x, y);
             ctx.line_to(x, y + TICK_SIZE);
 
@@ -449,7 +455,12 @@ impl View {
 
             // Center the label.
             let (width, _height) = layout.pixel_size();
-            let x = self.label_width as f64 + TICK_PADDING + TICK_SIZE + BORDER_WIDTH * 0.5 + graph_width as f64 * tick.position - width as f64 * 0.5;
+            let x = self.label_width as f64
+                + TICK_PADDING
+                + TICK_SIZE
+                + BORDER_WIDTH * 0.5
+                + graph_width as f64 * tick.position
+                - width as f64 * 0.5;
             let y = graph_height as f64 + BORDER_WIDTH + TICK_PADDING + TICK_SIZE;
 
             ctx.move_to(x, y);
@@ -478,7 +489,10 @@ impl View {
 }
 
 impl Model {
-    fn new(sender: glib::SyncSender<ViewEvent>, self_sender: mpsc::SyncSender<ModelEvent>) -> Model {
+    fn new(
+        sender: glib::SyncSender<ViewEvent>,
+        self_sender: mpsc::SyncSender<ModelEvent>,
+    ) -> Model {
         Model {
             flac_reader: None,
             spectrum: Vec::new(),
@@ -502,9 +516,7 @@ impl Model {
                     // If there is another event waiting, and it is a resize
                     // just like the current event, then the current event is
                     // already obsolete and we can drop it.
-                    (&ModelEvent::Resize(..), &ModelEvent::Resize(..)) => {
-                        next_event
-                    }
+                    (&ModelEvent::Resize(..), &ModelEvent::Resize(..)) => next_event,
                     // In any other case, we need to handle the current event.
                     // Handle it now, and leave the next event to be handled in
                     // the next iteration, or after the `try_iter` loop.
@@ -590,7 +602,10 @@ impl Model {
         for _ in 0..100 {
             let block = match blocks.read_next_or_eof(buffer) {
                 Ok(Some(b)) => b,
-                Ok(None) => { have_more = false; break }
+                Ok(None) => {
+                    have_more = false;
+                    break;
+                }
                 Err(err) => return eprintln!("Failed to decode: {:?}", err),
             };
 
@@ -651,18 +666,18 @@ impl Model {
 
         // Space tick labels times apart that format to "round" numbers as mm:ss.
         let quant_x_tick_secs = match x_tick_duration_seconds {
-              0         =>   1,
-              1 ..=   5 =>   5,
-              6 ..=  10 =>  10,
-             11 ..=  15 =>  15,
-             16 ..=  30 =>  30,
-             31 ..=  60 =>  60,
-             61 ..=  90 =>  90,
-             91 ..= 120 => 120,
-            121 ..= 300 => 300,
-            301 ..= 600 => 600,
-            601 ..= 900 => 900,
-            _          => 1200,
+            0 => 1,
+            1..=5 => 5,
+            6..=10 => 10,
+            11..=15 => 15,
+            16..=30 => 30,
+            31..=60 => 60,
+            61..=90 => 90,
+            91..=120 => 120,
+            121..=300 => 300,
+            301..=600 => 600,
+            601..=900 => 900,
+            _ => 1200,
         };
 
         // Avoid placing labels at the end, because they will be cut off. For
@@ -684,7 +699,7 @@ impl Model {
             t_sec += quant_x_tick_secs;
 
             if t_sec * self.sample_rate as u64 + label_duration > duration {
-                break
+                break;
             }
         }
 
@@ -707,8 +722,8 @@ impl Model {
             let value_hz = map_y_axis(t, hz_min, hz_max);
             let label = match () {
                 () if value_hz > 10_000.0 => format!("{:.1} kHz", value_hz / 1000.0),
-                () if value_hz >   1000.0 => format!("{:.2} kHz", value_hz / 1000.0),
-                _                         => format!("{:.0} Hz",  value_hz),
+                () if value_hz > 1000.0 => format!("{:.2} kHz", value_hz / 1000.0),
+                _ => format!("{:.0} Hz", value_hz),
             };
             let tick = Tick {
                 position: t,
@@ -717,7 +732,9 @@ impl Model {
             y_ticks.push(tick);
         }
 
-        self.sender.send(ViewEvent::SetTicks(x_ticks, y_ticks)).unwrap();
+        self.sender
+            .send(ViewEvent::SetTicks(x_ticks, y_ticks))
+            .unwrap();
     }
 
     /// Paint a new bitmap and send it over to the UI thread.
@@ -811,7 +828,8 @@ fn main() {
         // messages back to the view is a tailored glib channel, but it behaves
         // the same as the mpsc one.
         let (send_model, recv_model) = mpsc::sync_channel(10);
-        let (send_view, recv_view) = glib::MainContext::sync_channel(glib::source::Priority::DEFAULT, 10);
+        let (send_view, recv_view) =
+            glib::MainContext::sync_channel(glib::source::Priority::DEFAULT, 10);
 
         // On a background thread, construct the model, and run its event loop.
         let send_model_clone = send_model.clone();
