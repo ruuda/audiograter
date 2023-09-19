@@ -3,18 +3,18 @@ name = "audiograter"
 version = "1.0.0"
 license = "GPL-3.0"
 authors = ["Ruud van Asseldonk <dev@veniogames.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-cairo-rs   = "0.7.1"
+cairo-rs   = "0.18.2"
 claxon     = "0.4.2"
-gdk        = "0.11.0"
-gdk-pixbuf = "0.7.0"
-gio        = "0.7.0"
-glib       = "0.8.1"
-gtk        = "0.7.0"
-pango      = "0.7.0"
-pangocairo = "0.8.0"
+gdk        = "0.18.0"
+gdk-pixbuf = "0.18.0"
+gio        = "0.18.2"
+glib       = "0.18.2"
+gtk        = "0.18.1"
+pango      = "0.18.0"
+pangocairo = "0.18.0"
 
 [profile.dev]
 panic = "abort"

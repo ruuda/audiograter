@@ -7,8 +7,6 @@
 
 mod dft;
 
-use std::env;
-use std::iter;
 use std::path::{PathBuf};
 use std::ffi::OsStr;
 use std::sync::mpsc;
@@ -20,11 +18,6 @@ use std::i32;
 
 use gio::prelude::*;
 use gtk::prelude::*;
-use gdk::prelude::*;
-
-// For some reason, the wildcard import above does not import this,
-// we need to do it manually.
-use gtk::prelude::SettingsExt;
 
 /// The number of samples in a single DFT window.
 const WINDOW_LEN: usize = 8192;
@@ -100,15 +93,6 @@ struct Bitmap {
 }
 
 impl Bitmap {
-    pub fn new(width: i32, height: i32) -> Bitmap {
-        let len = width * height * 3;
-        Bitmap {
-            data: iter::repeat(0).take(len as usize).collect(),
-            width: width,
-            height: height,
-        }
-    }
-
     pub fn generate<F: Fn(i32, i32) -> f32>(width: i32, height: i32, f: F) -> Bitmap {
         let len = width * height * 3;
         let mut data = Vec::with_capacity(len as usize);
@@ -134,7 +118,7 @@ impl Bitmap {
         let has_alpha = false;
         let bits_per_sample = 8;
         let row_stride = 3 * self.width;
-        gdk_pixbuf::Pixbuf::new_from_mut_slice(
+        gdk_pixbuf::Pixbuf::from_mut_slice(
             self.data,
             gdk_pixbuf::Colorspace::Rgb,
             has_alpha,
@@ -279,8 +263,8 @@ impl View {
         // Create a Pango layout for an axis label, with the right UI font. We
         // use this layout to measure the size of a label, to reserve the right
         // amount of space for labels.
-        let label_layout = window.create_pango_layout(Some("00.0 kHz")).unwrap();
-        let (label_width, label_height) = label_layout.get_pixel_size();
+        let label_layout = window.create_pango_layout(Some("00.0 kHz"));
+        let (label_width, label_height) = label_layout.pixel_size();
 
         let view_cell = Rc::new(RefCell::new(
             View {
@@ -305,7 +289,7 @@ impl View {
         let view_cell_clone = view_cell.clone();
         image.connect_draw(move |_self, ctx| {
             view_cell_clone.borrow_mut().on_draw(ctx);
-            glib::signal::Inhibit(true)
+            glib::signal::Propagation::Stop
         });
 
         let view_cell_clone = view_cell.clone();
@@ -332,7 +316,7 @@ impl View {
     fn on_drag_data_received(&self, data: &gtk::SelectionData) {
         // We registered only this target, so we should only be signalled for
         // this target.
-        if let Some(uri) = data.get_text() {
+        if let Some(uri) = data.text() {
             // When dropped, the uri is terminated by a newline. Strip it.
             let uri_stripped = uri.as_str().trim_end();
             if let Ok((fname, _)) = glib::filename_from_uri(uri_stripped) {
@@ -342,8 +326,8 @@ impl View {
     }
 
     fn on_size_allocate(&self, rect: &gtk::Rectangle) {
-        let (width, height) = self.get_graph_size(rect.width, rect.height);
-        let f = self.image.get_scale_factor();
+        let (width, height) = self.get_graph_size(rect.width(), rect.height());
+        let f = self.image.scale_factor();
         let event = ModelEvent::Resize(
             width * f,
             height * f,
@@ -354,9 +338,12 @@ impl View {
     }
 
     fn on_draw(&self, ctx: &cairo::Context) {
-        let actual_size = self.image.get_allocation();
-        let transform = ctx.get_matrix();
-        let (graph_width, graph_height) = self.get_graph_size(actual_size.width, actual_size.height);
+        let actual_size = self.image.allocation();
+        let transform = ctx.matrix();
+        let (graph_width, graph_height) = self.get_graph_size(
+            actual_size.width(),
+            actual_size.height(),
+        );
 
         if let Some(pixbuf) = self.pixbuf.as_ref() {
             // Stretch the bitmap to fill the entire widget. This has two
@@ -367,8 +354,8 @@ impl View {
             // bitmap is still being rendered, we can stretch the old one to
             // hide the fact that the new one is not ready, instead of having a
             // gap, or having the image be truncated.
-            let scale_x = graph_width as f64 / pixbuf.get_width() as f64;
-            let scale_y = graph_height as f64 / pixbuf.get_height() as f64;
+            let scale_x = graph_width as f64 / pixbuf.width() as f64;
+            let scale_y = graph_height as f64 / pixbuf.height() as f64;
             ctx.scale(scale_x, scale_y);
             ctx.set_source_pixbuf(
                 pixbuf,
@@ -377,7 +364,7 @@ impl View {
                 (self.label_width as f64 + TICK_SIZE + TICK_PADDING + 1.0) / scale_x,
                 1.0 / scale_y
             );
-            ctx.paint();
+            ctx.paint().unwrap();
 
             // Undo the scale, so we can draw in display pixels again later.
             ctx.set_matrix(transform);
@@ -397,7 +384,7 @@ impl View {
             ctx.move_to(x, y);
             ctx.line_to(x + TICK_SIZE, y);
 
-            let x = actual_size.width as f64 - BORDER_WIDTH;
+            let x = actual_size.width() as f64 - BORDER_WIDTH;
             ctx.move_to(x, y);
             ctx.line_to(x - TICK_SIZE, y);
         }
@@ -415,25 +402,25 @@ impl View {
 
         ctx.set_line_width(BORDER_WIDTH);
         ctx.set_source_rgba(1.0, 1.0, 1.0, 0.8);
-        ctx.stroke();
+        ctx.stroke().unwrap();
 
         for tick in &self.y_ticks {
-            let layout = self.window.create_pango_layout(Some(&tick.label[..])).unwrap();
+            let layout = self.window.create_pango_layout(Some(&tick.label[..]));
 
             // Align the label right, next to the tick.
-            let (width, height) = layout.get_pixel_size();
+            let (width, _height) = layout.pixel_size();
             let x = self.label_width as f64 - width as f64;
             let y = BORDER_WIDTH + graph_height as f64 * (1.0 - tick.position);
 
             // Vertically align the label text to the tick.
             // Based on http://gtk.10911.n7.nabble.com/Pango-Accessing-x-height-mean-line-in-Pango-layout-td79374.html.
-            let pango_context = layout.get_context().unwrap();
-            let font = layout.get_font_description();
+            let pango_context = layout.context();
+            let font = layout.font_description();
             let language = None;
-            let metrics = pango_context.get_metrics(font.as_ref(), language).unwrap();
-            let baseline = layout.get_baseline();
-            let strike_pos = metrics.get_strikethrough_position();
-            let strike_thick = metrics.get_strikethrough_thickness();
+            let metrics = pango_context.metrics(font.as_ref(), language);
+            let baseline = layout.baseline();
+            let strike_pos = metrics.strikethrough_position();
+            let strike_thick = metrics.strikethrough_thickness();
             let x_center_font_units = baseline - strike_pos - strike_thick / 2;
             // Convert font units to view pixels, see also
             // https://developer.gnome.org/pango/stable/pango-Glyph-Storage.html#PANGO-PIXELS:CAPS
@@ -445,10 +432,10 @@ impl View {
 
         // TODO: Fill a vec with these and walk the ticks only once.
         for tick in &self.x_ticks {
-            let layout = self.window.create_pango_layout(Some(&tick.label[..])).unwrap();
+            let layout = self.window.create_pango_layout(Some(&tick.label[..]));
 
             // Center the label.
-            let (width, height) = layout.get_pixel_size();
+            let (width, _height) = layout.pixel_size();
             let x = self.label_width as f64 + TICK_PADDING + TICK_SIZE + BORDER_WIDTH * 0.5 + graph_width as f64 * tick.position - width as f64 * 0.5;
             let y = graph_height as f64 + BORDER_WIDTH + TICK_PADDING + TICK_SIZE;
 
@@ -652,16 +639,16 @@ impl Model {
         // Space tick labels times apart that format to "round" numbers as mm:ss.
         let quant_x_tick_secs = match x_tick_duration_seconds {
               0         =>   1,
-              1 ...   5 =>   5,
-              6 ...  10 =>  10,
-             11 ...  15 =>  15,
-             16 ...  30 =>  30,
-             31 ...  60 =>  60,
-             61 ...  90 =>  90,
-             91 ... 120 => 120,
-            121 ... 300 => 300,
-            301 ... 600 => 600,
-            601 ... 900 => 900,
+              1 ..=   5 =>   5,
+              6 ..=  10 =>  10,
+             11 ..=  15 =>  15,
+             16 ..=  30 =>  30,
+             31 ..=  60 =>  60,
+             61 ..=  90 =>  90,
+             91 ..= 120 => 120,
+            121 ..= 300 => 300,
+            301 ..= 600 => 600,
+            601 ..= 900 => 900,
             _          => 1200,
         };
 
@@ -793,15 +780,16 @@ impl Model {
 }
 
 fn main() {
+    gtk::init().unwrap();
     let application = gtk::Application::new(
         Some("nl.ruuda.audiograter"),
         // Allow multiple instances of the application, even though we did
         // provide an application id.
         gio::ApplicationFlags::NON_UNIQUE,
-    ).unwrap();
+    );
 
-    if let Some(settings) = gtk::Settings::get_default() {
-        settings.set_property_gtk_application_prefer_dark_theme(true);
+    if let Some(settings) = gtk::Settings::default() {
+        settings.set_gtk_application_prefer_dark_theme(true);
     }
 
     // When the application starts, run all of this on the main thread.
@@ -810,7 +798,7 @@ fn main() {
         // messages back to the view is a tailored glib channel, but it behaves
         // the same as the mpsc one.
         let (send_model, recv_model) = mpsc::sync_channel(10);
-        let (send_view, recv_view) = glib::MainContext::sync_channel(glib::PRIORITY_DEFAULT_IDLE, 10);
+        let (send_view, recv_view) = glib::MainContext::sync_channel(glib::source::Priority::DEFAULT, 10);
 
         // On a background thread, construct the model, and run its event loop.
         let send_model_clone = send_model.clone();
@@ -825,11 +813,10 @@ fn main() {
         // Handle the view's events on this thread, the main thread.
         recv_view.attach(None, move |event| {
             view_cell.borrow_mut().handle_event(event);
-            glib::source::Continue(true)
+            glib::ControlFlow::Continue
         });
     });
 
     // And run the UI event loop on the main thread.
-    let args: Vec<_> = env::args().collect();
-    application.run(&args);
+    application.run();
 }
