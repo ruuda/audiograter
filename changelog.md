@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2
+
+Released 2023-12-30.
+
+ * Support opening a file when provided as a command-line argument.
+
 ## 1.1
 
 Released 2023-09-19.
