@@ -809,13 +809,48 @@ impl Model {
     }
 }
 
+fn run_main(app: &gtk::Application, open_files: &[gio::File]) {
+    // Create two bounded one-way message queues. The one that sends
+    // messages back to the view is a tailored glib channel, but it behaves
+    // the same as the mpsc one.
+    let (send_model, recv_model) = mpsc::sync_channel(10);
+    let (send_view, recv_view) =
+        glib::MainContext::sync_channel(glib::source::Priority::DEFAULT, 10);
+
+    // On a background thread, construct the model, and run its event loop.
+    let send_model_clone = send_model.clone();
+    thread::spawn(move || {
+        let mut model = Model::new(send_view, send_model_clone);
+        model.run_event_loop(recv_model);
+    });
+
+    // Back on the main thread, construct the view.
+    let view_cell = View::new(app, send_model.clone());
+
+    // Handle the view's events on this thread, the main thread.
+    recv_view.attach(None, move |event| {
+        view_cell.borrow_mut().handle_event(event);
+        glib::ControlFlow::Continue
+    });
+
+    // If we were supposed to open any files at startup, open them now by
+    // sending the event to the model.
+    for file in open_files.iter() {
+        if let Some(fname) = file.path() {
+            send_model.send(ModelEvent::OpenFile(fname)).unwrap();
+        }
+        break;
+    }
+}
+
 fn main() {
     gtk::init().unwrap();
     let application = gtk::Application::new(
         Some("nl.ruuda.audiograter"),
         // Allow multiple instances of the application, even though we did
         // provide an application id.
-        gio::ApplicationFlags::NON_UNIQUE,
+        gio::ApplicationFlags::NON_UNIQUE |
+        gio::ApplicationFlags::HANDLES_OPEN,
     );
 
     if let Some(settings) = gtk::Settings::default() {
@@ -823,30 +858,10 @@ fn main() {
     }
 
     // When the application starts, run all of this on the main thread.
-    application.connect_activate(move |app| {
-        // Create two bounded one-way message queues. The one that sends
-        // messages back to the view is a tailored glib channel, but it behaves
-        // the same as the mpsc one.
-        let (send_model, recv_model) = mpsc::sync_channel(10);
-        let (send_view, recv_view) =
-            glib::MainContext::sync_channel(glib::source::Priority::DEFAULT, 10);
+    application.connect_activate(move |app| run_main(app, &[]));
 
-        // On a background thread, construct the model, and run its event loop.
-        let send_model_clone = send_model.clone();
-        thread::spawn(move || {
-            let mut model = Model::new(send_view, send_model_clone);
-            model.run_event_loop(recv_model);
-        });
-
-        // Back on the main thread, construct the view.
-        let view_cell = View::new(app, send_model);
-
-        // Handle the view's events on this thread, the main thread.
-        recv_view.attach(None, move |event| {
-            view_cell.borrow_mut().handle_event(event);
-            glib::ControlFlow::Continue
-        });
-    });
+    // Set up handling files provided on the command line.
+    application.connect_open(move |app, files, _| run_main(app, files));
 
     // And run the UI event loop on the main thread.
     application.run();
