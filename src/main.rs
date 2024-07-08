@@ -323,14 +323,21 @@ impl View {
     }
 
     fn on_drag_data_received(&self, data: &gtk::SelectionData) {
-        // We registered only this target, so we should only be signalled for
-        // this target.
         if let Some(uri) = data.text() {
             // When dropped, the uri is terminated by a newline. Strip it.
             let uri_stripped = uri.as_str().trim_end();
             if let Ok((fname, _)) = glib::filename_from_uri(uri_stripped) {
                 self.sender.send(ModelEvent::OpenFile(fname)).unwrap();
             }
+
+            // Nautilus used to send uris as text, but now it sends uris handled
+            // by the loop below. Nemo used to send urls, but now it sends just
+            // the file path as text. So if it's not a filename uri, then try
+            // and see if the path exists.
+            if let Ok(_meta) = std::fs::metadata(&uri_stripped) {
+                self.sender.send(ModelEvent::OpenFile(uri_stripped.into())).unwrap();
+            }
+
             return;
         }
 

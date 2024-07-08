@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3
+
+Released 2024-07-08.
+
+ * Handle more types of drop events. This repairs dropping files from Nemo,
+   which has been broken since a few weeks by a change in behavior somewhere
+   in the stack.
+
 ## 1.2
 
 Released 2023-12-30.
